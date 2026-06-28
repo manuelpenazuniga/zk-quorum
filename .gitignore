@@ -1,0 +1,9 @@
+# Artefactos de build — NUNCA versionar ni copiar (causan el crash de WSL)
+target/
+node_modules/
+# El clon de referencia se regenera con spike/bootstrap.sh
+spike/soroban-examples/
+spike/circom
+*.wtns
+*.zkey
+*.ptau
