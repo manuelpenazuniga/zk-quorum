@@ -1,11 +1,12 @@
 # ZK-Quorum — Plan maestro de arquitectura, implementación y auditoría multiagente
 
-**Estado:** auditado por Qwen 3.7 Max y GLM-5.2; remediación incorporada antes de implementar
+**Estado:** plan auditado y congelado; ejecución multiagente en curso, sin lanes integradas todavía
 **Fecha de congelamiento inicial:** 2026-06-29
 **Deadline informado y corregido explícitamente por el usuario:** 2026-07-02; hora exacta externa pendiente de registrar
 **Freeze interno:** 2026-07-01 20:00 America/Santiago; después solo se aceptan fixes bloqueantes y material de entrega
 **Repositorio:** `manuelpenazuniga/zk-quorum`
 **Autoridad operativa:** este documento reemplaza los planes de ejecución anteriores cuando exista contradicción.
+**Ledger de ejecución:** `docs/plan/OPEN-CODE-EXECUTION-LOG.md`; conserva sesiones, comandos, resultados, hallazgos y disposiciones posteriores al freeze.
 **Regla principal:** primero se congela y audita el statement criptográfico; después se implementa. Ningún agente puede reinterpretar la arquitectura por su cuenta.
 
 ---
