@@ -1,34 +1,88 @@
-# ZK-Quorum — CLAUDE.md
+# ZK-Quorum — brief operativo
 
-> Brief operativo (se auto-carga al iniciar sesión). Detalle técnico **autoritativo** en `techs-specs-zk-quorum.md`; visión en `zk-quorum.md`; estado del spike en `spike/SPIKE-RESULTS.md`. Lee esos antes de construir.
+> Fuente autoritativa de arquitectura, ejecución, gates y routing multiagente:
+> `docs/plan/ZK-QUORUM-EXECUTION-PLAN.md`.
+>
+> `techs-specs-zk-quorum.md` y `zk-quorum.md` conservan contexto histórico, pero
+> contienen afirmaciones anteriores al audit del 2026-06-29. No deben guiar
+> implementación cuando contradigan el plan maestro.
 
-## Qué es
-Urna secreta institucional (sindicatos/empresas/municipios): **ID verificada, voto anónimo, escala sin caerse, auditable para siempre**. Cuatro propiedades a la vez: elegibilidad (membership), unicidad (nullifier), secreto del voto, integridad del conteo.
-Frase ganadora: *"500 personas votan, no se cae, y al cerrar cualquiera re-audita que nadie votó dos veces y que el conteo cuadra — sin saber jamás quién votó qué."*
+## Objetivo
 
-## Hackathon
-"Stellar Hacks: Real-World ZK" (DoraHacks). ZK **load-bearing** + verificado en Soroban. Deadline **2026-06-29 12:00 PST**.
+Urna institucional sobre Stellar/Soroban:
 
-## Stack VALIDADO post-spike — NO cambiar a ciegas (ver `spike/SPIKE-RESULTS.md`)
-- **Curva BLS12-381** (NO BN254/bn128). · **Base = fork de `privacy-pools`** (su `main.circom` Withdraw = membership + nullifier + **ASP** es el molde) — NO Semaphore. · **Poseidon `poseidon255`↔`soroban-poseidon`** (par consistente; NO circomlib, NO host nativa). · Verificador `groth16_verifier` vía `contractimport!` · `cli/circom2soroban` · snarkjs `--curve bls12381` · circom 2.2.x · soroban-sdk 25.1.0 · stellar CLI 27 · `wasm32v1-none` · testnet. · SaaS/pago: SEP-41 (USDC).
+- credencial emitida tras verificar identidad;
+- proof ZK de registro y elegibilidad;
+- un voto por credencial y elección;
+- identidad/credencial oculta;
+- tally y auditoría reproducibles.
 
-## Escalabilidad CORREGIDA (lo más importante del proyecto)
-**NO** "O(1) vía recursión/agregación" (no es camino probado en Stellar). **SÍ paralelismo + throughput:** cada voto = una prueba verificada on-chain (barata, BLS12-381) y Stellar absorbe el volumen → **O(n) barato, no O(1)**. Recursión/MACI = **roadmap, NUNCA en el build**.
+## Deadline
 
-## Escalera de rungs (secreto del voto)
-Rung 0 anónimo-público (**MVP garantizado**) → Rung 1 commit-reveal (secreto real, solo un hash) → Rung 2 ElGamal homomórfico → Rung 3 MACI/recursión (roadmap). **Ship Rung 0**; sube a Rung 1 si hay tiempo.
+El usuario corrigió el deadline a **2026-07-02**. La hora externa exacta debe
+registrarse al comenzar la ejecución. Freeze interno:
+**2026-07-01 20:00 America/Santiago**.
 
-## Mapeo al patrón (de privacy-pools)
-`stateRoot` = padrón · `nullifierHash` = unicidad por elección (`externalNullifier`=election_id) · `signal` = voto (R0) / `hash(voto,salt)` (R1) · `associationRoot` = ASP padrón elegible. `cast` verifica por-voto + dedup nullifier + ++contador; auditoría = re-ejecutar el conteo.
+## Stack congelado
 
-## Rulings de de-risking
-- Poseidon **in-circuit**; el contrato trata hashes como **opacos** (nunca recomputa nativa). Showcase = BLS12-381 + ASP (privacidad cumplidora, criterio SDF).
-- **NO** recursión/MACI/batch-verify custom en el build (roadmap). **NO** BN254.
+- Groth16 sobre BLS12-381.
+- Circom 2.2.3 y snarkjs 0.7.x.
+- `poseidon255.circom` con `soroban-poseidon = "=25.0.0"` solo después de
+  golden vectors.
+- `groth16_verifier` BLS12-381 vía `contractimport!`.
+- `soroban-sdk = "25.1.0"`, Rust 1.96, `wasm32v1-none`.
+- Upstream de referencia fijado:
+  `stellar/soroban-examples@7b168174ae1268dab91a0190d80a94ab7ff41b59`.
+- No BN254, Semaphore, recursión, MACI ni batch verification custom.
 
-## Estado actual
-Spike 🟢: privacy-pools **9/9 tests** (incl. nullifier-reuse + ASP); verificador en testnet `CACFO5YAVIUZYINQTFDVHE5GBLYJ7ALQERA7AXB235KMWBIPHRRKZ57M`; prueba BLS12-381 fresca OK.
-**Tarea 1 del build** = `stellar contract invoke` real en testnet (serializar structs G1/G2, copiar de `groth16_verifier/src/test.rs`) + adaptar `main.circom` (signal=voto, externalNullifier=election_id) + contrato `open_election`/`cast`/`result`/`audit`.
+## Statement corregido
 
-## Operación (WSL)
-- Recuperar el entorno del spike sin copiar artefactos (lo que crashea WSL): `cd spike && ./bootstrap.sh`. Smoke test: `cd soroban-examples/privacy-pools/contract && cargo test --release`.
-- Repo en filesystem **Linux**, **nunca `/mnt/c/`**. Nunca versiones/copies `target/`, `node_modules/`, `soroban-examples/` (ya en `.gitignore`).
+El upstream **no** implementa `externalNullifier` ni un ballot signal.
+ZK-Quorum escribe circuitos de ballot explícitos:
+
+```text
+credentialCommitment = P2(label, P2(nullifierSecret, trapdoor))
+nullifierHash        = P2(nullifierSecret, electionScope)
+
+R0: vote es público y se prueba vote < optionCount
+R1: ballotCommitment = P2(P2(vote, salt), electionScope)
+```
+
+- `stateRoot`: registro de credential commitments.
+- `associationRoot`: labels elegibles; no se permite zero bypass.
+- `electionScope`: SHA-256 domain-separated con rejection sampling a Fr,
+  ligado a red, contrato, election ID y versión.
+- No se usa Poseidon directo de tres inputs: upstream tiene evidencia
+  contradictoria para esa aridad.
+
+## Privacidad
+
+`cast` y `reveal` no autentican una dirección de votante. La demo usa una cuenta
+relayer común porque una cuenta Stellar conocida correlacionaría al votante con
+su transacción. El issuer sigue siendo confiable para emitir una sola
+credencial por identidad.
+
+Rung 0 oculta identidad, no el valor del voto. Rung 1 añade secreto hasta
+reveal, pero no coercion resistance y puede tener non-reveals.
+
+## Estado real
+
+- Upstream `privacy-pools`: 9/9 tests pasan.
+- Upstream `groth16_verifier`: 1/1 test pasa.
+- Verifier histórico en testnet:
+  `CACFO5YAVIUZYINQTFDVHE5GBLYJ7ALQERA7AXB235KMWBIPHRRKZ57M`.
+- No existe todavía código versionado del producto.
+- No se preservaron ptau/zkey/proof/VK del spike.
+- Stellar CLI no está instalado en el entorno actual.
+- `spike/bootstrap.sh` todavía no es reproducible: no fija commit y descarga
+  Linux AMD64 incluso cuando se ejecuta en macOS ARM.
+
+## Routing OpenCode
+
+- MiniMax M3: volumen, producto, scripts, CI, docs.
+- DeepSeek V4 Pro: circuitos, Rust/Soroban y debug ZK.
+- Qwen 3.7 Max: auditoría read-only de security/soundness.
+- GLM-5.2: auditoría read-only de arquitectura/release.
+
+Antes de implementar debe estar cerrado el Gate P1 del plan maestro:
+remediación aplicada, legacy neutralizado y cero Critical/High abiertos.

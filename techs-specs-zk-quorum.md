@@ -1,5 +1,11 @@
 # Tech-Specs — ZK-Quorum (validación de ingeniería senior ZK/Stellar)
 
+> **DOCUMENTO HISTÓRICO / SUPERADO PARA IMPLEMENTACIÓN (2026-06-29).**
+> Conserva el razonamiento que llevó al spike, pero todavía mezcla
+> Semaphore/BN254 con el stack post-spike y afirma que `externalNullifier` y
+> `signal` ya existen. La arquitectura y el plan vigentes están en
+> `docs/plan/ZK-QUORUM-EXECUTION-PLAN.md`.
+
 **Rol:** Senior Blockchain Engineer (ZK + Stellar) · **Fecha:** 2026-06-26 · **Para:** de-riskear el build de 3 días
 **Mandato:** ninguna tecnología en el camino crítico puede estar sin lanzar, incompleta o ser impracticable.
 

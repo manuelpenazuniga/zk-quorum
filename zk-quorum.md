@@ -1,5 +1,12 @@
 # ZK-Quorum — Urna secreta institucional: ID verificada, voto anónimo, escala que no se cae, auditable para siempre
 
+> **VISIÓN HISTÓRICA / NO USAR COMO SPEC (2026-06-29).**
+> Este documento contiene claims y pseudocódigo anteriores al audit del circuito
+> real, incluyendo Semaphore, BN254, `externalNullifier`, señal de voto,
+> paralelismo y escala no medidos. La especificación y ejecución autoritativas
+> están en `docs/plan/ZK-QUORUM-EXECUTION-PLAN.md`. Los claims finales se
+> reescribirán únicamente desde evidencia.
+
 **Proyecto en profundidad** · Modelo: Opus 4.8 · Fecha: 2026-06-26 · Deadline: 2026-06-29 12:00 PST (~3 días)
 **Stack:** **fork de `privacy-pools`** (Circom/Groth16, **BLS12-381**): membership + nullifier + **ASP** · proving en navegador (snarkjs `--curve bls12381`) · Poseidon `poseidon255`↔`soroban-poseidon` · verificador `groth16_verifier` (BLS12-381) · capa clásica de Stellar (throughput) · Soroban · Passkeys (Secp256r1) · SEP-41 (USDC)
 
