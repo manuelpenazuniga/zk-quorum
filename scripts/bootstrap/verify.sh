@@ -85,11 +85,14 @@ if command -v rustup >/dev/null 2>&1; then
   fi
 fi
 
-# Stellar CLI is intentionally not installed globally per F0 user constraint.
 if command -v stellar >/dev/null 2>&1; then
-  soft_fail "stellar CLI on PATH; user constraint says do not install globally"
+  stellar_version="$(stellar --version 2>/dev/null | head -n1 || true)"
+  case "$stellar_version" in
+    *"27."*) pass "stellar CLI $stellar_version" ;;
+    *) soft_fail "stellar CLI version is '$stellar_version', expected 27.x" ;;
+  esac
 else
-  pass "stellar CLI not installed (per user constraint)"
+  soft_fail "stellar CLI not installed; Gate T0 requires 27.x"
 fi
 
 # ── 3) Bootstrapped artefacts (F0.4 / F0.7 / F0.8) ────────────────────
