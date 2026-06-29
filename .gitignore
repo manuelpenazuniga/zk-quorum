@@ -40,6 +40,7 @@ spike/node_modules/
 # ── Bootstrap cache (downloaded by scripts/bootstrap/bootstrap.sh) ──────────
 .bootstrap/
 **/.bootstrap/
+.worktrees/
 
 # ── Secrets — never versionar (per plan §17) ───────────────────────────────
 .env
