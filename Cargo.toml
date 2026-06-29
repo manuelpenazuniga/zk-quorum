@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
 members = []
+exclude = [
+  "contracts/zk-quorum",
+  "crates/credential",
+  "crates/zk",
+  "tools/circom2soroban",
+]
 
 [workspace.package]
 edition = "2021"
