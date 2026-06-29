@@ -1,0 +1,27 @@
+{
+  "name": "@zk-quorum/relayer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ZK-Quorum demo relayer. Off-chain pre-verify, simulate, and submit cast/reveal transactions through a common submitter account. No secrets stored, all adapters are injectable.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "node --enable-source-maps ./src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zk-quorum/protocol": "file:../../packages/protocol"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.9"
+  },
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  }
+}

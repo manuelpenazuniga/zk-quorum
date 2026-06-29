@@ -1,0 +1,9 @@
+export const ZKQ_PROTOCOL_VERSION = "0.0.0" as const;
+export const ZKQ_PROTOCOL_API_VERSION = "v1" as const;
+export const ZKQ_DEFAULT_TALLY_BUCKETS = 16 as const;
+export const ZKQ_MAX_OPTIONS_DEFAULT = 16 as const;
+export const ZKQ_TREE_DEPTH_DEFAULT = 10 as const;
+export const ZKQ_ELECTION_SCOPE_DOMAIN_TAG = "zk-quorum:election-scope:v1" as const;
+export const ZKQ_PUBLIC_SCHEMA_R0 = "PUBLIC_SCHEMA_V1_R0" as const;
+export const ZKQ_PUBLIC_SCHEMA_R1 = "PUBLIC_SCHEMA_V1_R1" as const;
+export const ZKQ_EVENT_SCHEMA_V1 = "v1" as const;

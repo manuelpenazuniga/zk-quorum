@@ -1,0 +1,36 @@
+{
+  "name": "@zk-quorum/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ZK-Quorum protocol types, schemas, and domain helpers shared by relayer, auditor, and web",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./manifest": "./src/manifest.ts",
+    "./public-signals": "./src/publicSignals.ts",
+    "./scope": "./src/scope.ts",
+    "./tally": "./src/tally.ts",
+    "./events": "./src/events.ts",
+    "./errors": "./src/errors.ts",
+    "./ids": "./src/ids.ts",
+    "./version": "./src/version.ts",
+    "./hash": "./src/hash.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint:types": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "4.1.9"
+  },
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  }
+}

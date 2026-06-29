@@ -1,0 +1,30 @@
+{
+  "name": "@zk-quorum/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ZK-Quorum web client: admin, voter (with Web Worker proving boundary), and audit viewer. No real proving artefacts ship with this scaffold; the worker speaks to an injected adapter.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview --port 8788",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zk-quorum/protocol": "file:../../packages/protocol"
+  },
+  "devDependencies": {
+    "@stellar/stellar-sdk": "16.0.1",
+    "@types/node": "^26.0.1",
+    "jsdom": "26.0.0",
+    "typescript": "6.0.3",
+    "vite": "8.1.0",
+    "vitest": "4.1.9"
+  },
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  }
+}

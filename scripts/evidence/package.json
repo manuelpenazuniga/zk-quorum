@@ -1,0 +1,26 @@
+{
+  "name": "@zk-quorum/evidence",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ZK-Quorum evidence helpers: bundle assembly, content-addressed archive, run summary. Used by the load harness and CI.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zk-quorum/protocol": "file:../../packages/protocol"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vitest": "4.1.9",
+    "@types/node": "22.9.0"
+  },
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@zk-quorum/auditor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ZK-Quorum audit CLI: discover events, verify hashes, dedup nullifiers, reconstruct tally, audit R1 commit/reveal/non-reveal. All operations are pure on a local bundle; no network, no chain calls.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "bin": {
+    "zkq-auditor": "./dist/cli.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "auditor": "node --enable-source-maps ./src/cli.ts"
+  },
+  "dependencies": {
+    "@zk-quorum/protocol": "file:../../packages/protocol"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.9"
+  },
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  }
+}
