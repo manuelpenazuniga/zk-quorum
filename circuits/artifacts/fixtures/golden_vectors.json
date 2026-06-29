@@ -1,0 +1,19 @@
+{
+    "v": "1.0",
+    "description": "Cross-language golden vectors: Poseidon255 P2 and P3seq over BLS12-381 Fr. Rust crate credential matches Circom poseidon255.circom exactly.",
+    "vectors": {
+        "p2(1,2)": "28821147804331559602169231704816259064962739503761913593647409715501647586810",
+        "p3seq(1,2,3)": "25449209717923527142952704227728043701726876483169650107300041471510623667078",
+        "p2(0,0)": "51576823595707970152643159819788304363803754756066229172775779360774743019614",
+        "p2(1234567890,9876543210)": "27771607038322859082949799815786464601077828110800763259574488164592802051706",
+        "credentialCommitment(label=111,nullifierSecret=222,trapdoor=333)": "33380155885179640208912473019492003279421010499170178573196933234221612903872"
+    },
+    "provenance": {
+        "circom": "2.2.3",
+        "prime": "bls12381",
+        "circuit": "test_poseidon_vectors.circom",
+        "witness": "circuits/build/test/poseidon_witness_1_2_3.wtns",
+        "rust_crate": "crates/credential",
+        "rust_test": "test_golden_p2_1_2, test_golden_p3seq_1_2_3, test_golden_p2_0_0, test_golden_p2_large, test_golden_credential_commitment"
+    }
+}

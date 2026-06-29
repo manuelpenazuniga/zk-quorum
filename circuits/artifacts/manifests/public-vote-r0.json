@@ -1,0 +1,39 @@
+{
+    "circuit": "PublicVoteR0",
+    "rung": 0,
+    "description": "Public vote with hidden identity/credential. Vote is public input.",
+    "curve": "bls12-381",
+    "proof_system": "Groth16",
+    "circom_version": "2.2.3",
+    "depth": 10,
+    "max_options": 16,
+    "r1cs": {
+        "file": "main.r1cs",
+        "sha256": "TBD — regenerated each compile",
+        "constraints": "TBD — from 'circom --prime bls12381 --r1cs'",
+        "non_linear": "TBD",
+        "linear": "TBD",
+        "wires": "TBD",
+        "labels": "TBD",
+        "template_instances": "TBD"
+    },
+    "public_schema": {
+        "version": "V1_R0",
+        "total": 6,
+        "signals": [
+            {"index": 0, "name": "nullifierHash", "type": "Fr", "kind": "output"},
+            {"index": 1, "name": "vote", "type": "u32", "kind": "public_input"},
+            {"index": 2, "name": "optionCount", "type": "u32", "kind": "public_input"},
+            {"index": 3, "name": "stateRoot", "type": "Fr", "kind": "public_input"},
+            {"index": 4, "name": "associationRoot", "type": "Fr", "kind": "public_input"},
+            {"index": 5, "name": "electionScope", "type": "Fr", "kind": "public_input"}
+        ]
+    },
+    "private_inputs": [
+        "label", "nullifierSecret", "trapdoor",
+        "stateSiblings[10]", "stateIndex",
+        "associationSiblings[10]", "associationIndex"
+    ],
+    "setup_power": 14,
+    "timestamp": "2026-06-29T00:00:00Z"
+}
