@@ -1,0 +1,247 @@
+name: ci
+
+# F0.6 — base CI. This workflow is intentionally narrow: it verifies the
+# foundation (toolchain pins, scripts/bootstrap idempotence, and
+# manifest/secret hygiene). It does NOT yet run the contract tests,
+# circuits, or relayer — those live in lane workflows that are added when
+# their owned paths land (plan §11.3, §17).
+#
+# All runs are pinned to the toolchain declared by the repository
+# (.nvmrc, rust-toolchain.toml, scripts/bootstrap/lib.sh).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZKQ_RUST_VERSION: "1.96.0"
+  ZKQ_NODE_VERSION: "24"
+
+jobs:
+  # ── L1: every shell script under scripts/ must be syntactically valid ─
+  shellcheck:
+    name: shell scripts
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: bash -n on every script
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r -d '' f; do
+            if ! bash -n "$f"; then
+              echo "::error file=$f::bash -n failed"
+              failed=1
+            fi
+          done < <(find scripts -type f -name '*.sh' -print0)
+          exit "$failed"
+
+      - name: shellcheck (best-effort)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -x scripts/bootstrap/*.sh
+          else
+            echo "shellcheck not installed; skipping (bash -n above is mandatory)"
+          fi
+
+  # ── L2: toolchain pins present and consistent ────────────────────────
+  pins:
+    name: toolchain pins
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: pin file presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in rust-toolchain.toml .nvmrc LICENSE package.json package-lock.json Cargo.toml .gitignore scripts/bootstrap/bootstrap.sh scripts/bootstrap/verify.sh scripts/bootstrap/lib.sh; do
+            if [ ! -f "$f" ]; then
+              echo "::error file=$f::missing"
+              exit 1
+            fi
+          done
+          echo "All F0 owned files present."
+
+      - name: rust-toolchain pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          ch="$(awk -F'"' '/^channel/ {print $2}' rust-toolchain.toml)"
+          [ "$ch" = "$ZKQ_RUST_VERSION" ] \
+            || { echo "rust-toolchain channel '$ch' != $ZKQ_RUST_VERSION"; exit 1; }
+
+      - name: node pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="$(tr -d '[:space:]' < .nvmrc)"
+          [ "$v" = "$ZKQ_NODE_VERSION" ] \
+            || { echo ".nvmrc '$v' != $ZKQ_NODE_VERSION"; exit 1; }
+
+      - name: install Rust ${{ env.ZKQ_RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          toolchain: ${{ env.ZKQ_RUST_VERSION }}
+          targets: wasm32v1-none
+          components: rustfmt, clippy
+
+      - name: rustc / cargo
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo --version
+          rustup target list --installed
+
+      - name: install Node ${{ env.ZKQ_NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.ZKQ_NODE_VERSION }}
+
+      - name: node / npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+
+  # ── L3: manifests parse and lockfiles are consistent ────────────────
+  manifests:
+    name: manifests & lockfile
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install Node ${{ env.ZKQ_NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.ZKQ_NODE_VERSION }}
+
+      - name: package.json + lockfile parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('package-lock.json','utf8'))"
+
+      - name: npm ci
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+
+      - name: install Rust ${{ env.ZKQ_RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          toolchain: ${{ env.ZKQ_RUST_VERSION }}
+
+      - name: Cargo.toml parses
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata --no-deps --format-version 1 >/dev/null
+
+  # ── L4: secrets scan (plan §17) ──────────────────────────────────────
+  secret-scan:
+    name: secret & license scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: forbid committed secrets and large ZK artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Patterns that must never reach the index, by accident.
+          patterns=(
+            '*.key' '*.pem' '*.secret'
+            'stellar-*.toml' 'identity-*.toml'
+            '.env' '.env.*'
+            'proof.json' 'public.json'
+            '*.zkey' '*.ptau' '*.wtns'
+            'credential-backup-*.json' '*.credential.json'
+          )
+          failed=0
+          for p in "${patterns[@]}"; do
+            # `git ls-files` lists tracked paths; -x ignores .gitignore
+            # effects, but tracked-by-accident secrets are what we want to catch.
+            if git ls-files -z -- "$p" 2>/dev/null | grep -qz .; then
+              echo "::error::forbidden pattern tracked in Git: $p"
+              git ls-files -- "$p"
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+      - name: LICENSE present
+        shell: bash
+        run: |
+          test -s LICENSE \
+            || { echo "::error::LICENSE missing or empty"; exit 1; }
+          grep -q 'MIT License' LICENSE \
+            || { echo "::error::LICENSE does not declare MIT"; exit 1; }
+
+  # ── L5: bootstrap idempotence smoke (plan §12/F0 acceptance) ───────
+  bootstrap-smoke:
+    name: bootstrap idempotence
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install Node ${{ env.ZKQ_NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.ZKQ_NODE_VERSION }}
+
+      - name: install Rust ${{ env.ZKQ_RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@1.96.0
+        with:
+          toolchain: ${{ env.ZKQ_RUST_VERSION }}
+
+      - name: run bootstrap (first pass)
+        shell: bash
+        run: ./scripts/bootstrap/bootstrap.sh
+
+      - name: run bootstrap (second pass — must be a no-op)
+        shell: bash
+        run: ./scripts/bootstrap/bootstrap.sh
+
+      - name: run verify
+        shell: bash
+        run: ./scripts/bootstrap/verify.sh

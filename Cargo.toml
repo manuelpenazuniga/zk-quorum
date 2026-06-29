@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = []
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.96"
+license = "MIT"
+publish = false
+
+[workspace.metadata.zk_quorum]
+upstream_commit = "7b168174ae1268dab91a0190d80a94ab7ff41b59"
+upstream_repo = "https://github.com/stellar/soroban-examples"
+node_version = "24"
+snarkjs_version = "0.7.6"
+circom_version = "2.2.3"
+soroban_sdk_version = "25.1.0"

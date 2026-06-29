@@ -1,9 +1,88 @@
-# Artefactos de build — NUNCA versionar ni copiar (causan el crash de WSL)
+# ── Rust / Cargo ────────────────────────────────────────────────────────────
+# Build artifacts and per-target dirs.
 target/
+**/target/
+
+# ── Node / npm ─────────────────────────────────────────────────────────────
 node_modules/
-# El clon de referencia se regenera con spike/bootstrap.sh
+**/node_modules/
+
+# npm debug logs.
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── ZK artifacts — never versionar (per plan §6.5 y §17) ───────────────────
+# Powders of Tau, proving keys, witnesses, and proof blobs.
+*.ptau
+*.zkey
+*.wtns
+proof.json
+public.json
+# Verification keys are public and may be versioned under the audited
+# artifacts directory. Ignore ad-hoc exports elsewhere.
+verification_key.json
+!circuits/artifacts/
+!circuits/artifacts/verification_key_*.json
+verifier.sol
+verifier.json
+*.r1cs
+*.sym
+
+# ── Spike (regenerable, must NOT be copied) ────────────────────────────────
+# The spike clones a pinned upstream and a Circom binary; both are huge and
+# are recreated by scripts/bootstrap/bootstrap.sh. Never commit them.
 spike/soroban-examples/
 spike/circom
-*.wtns
-*.zkey
-*.ptau
+spike/node_modules/
+
+# ── Bootstrap cache (downloaded by scripts/bootstrap/bootstrap.sh) ──────────
+.bootstrap/
+**/.bootstrap/
+
+# ── Secrets — never versionar (per plan §17) ───────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.secret
+stellar-*.toml
+identity-*.toml
+
+# Voter credential files (private). See plan §4.
+credentials/
+*.credential.json
+credential-backup-*.json
+
+# ── Relayer / operational ──────────────────────────────────────────────────
+relayer-data/
+relayer.db
+relayer.db-journal
+
+# ── Soroban build outputs ──────────────────────────────────────────────────
+*.wasm
+*.wasm.map
+contract-bindings/
+
+# ── OS / editor junk ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Logs and temp ─────────────────────────────────────────────────────────
+*.log
+logs/
+tmp/
+temp/
+.tmp/
+
+# ── Coverage / test output ─────────────────────────────────────────────────
+coverage/
+*.lcov
+tarpaulin-report.html
