@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
 import { parseArgs } from "../src/cli.js";
 import { ZkqProtocolError } from "@zk-quorum/protocol";
+
 
 describe("auditor CLI parseArgs", () => {
   it("parses help", () => {
@@ -50,13 +52,45 @@ describe("auditor CLI entrypoint guard", () => {
   });
 
   it("real CLI execution prints usage and exits 0 for --help", () => {
-    const cliPath = resolve("src/cli.ts");
-    const out = execFileSync("npx", ["tsx", cliPath, "--help"], {
+    const binPath = resolve("bin/zkq-auditor.js");
+    const out = execFileSync(process.execPath, [binPath, "--help"], {
       encoding: "utf8",
       cwd: process.cwd(),
       stdio: ["pipe", "pipe", "pipe"],
     });
     expect(out).toContain("Usage: zkq-auditor");
     expect(out).toContain("--bundle");
+  });
+
+  it("package.json bin points to a file that actually exists", () => {
+    const pkgContent = readFileSync(resolve("package.json"), "utf8");
+    const pkg = JSON.parse(pkgContent);
+    expect(pkg.bin).toBeDefined();
+    for (const binPath of Object.values(pkg.bin)) {
+      const resolved = resolve(binPath as string);
+      expect(existsSync(resolved)).toBe(true);
+    }
+  });
+
+  it("smoke test of the real bin executes directly without npx and prints usage", () => {
+    const pkgContent = readFileSync(resolve("package.json"), "utf8");
+    const pkg = JSON.parse(pkgContent);
+    const binPath = resolve(pkg.bin["zkq-auditor"]);
+    
+    // Test direct shebang execution since we did chmod +x
+    const outDirect = execFileSync(binPath, ["--help"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    expect(outDirect).toContain("Usage: zkq-auditor");
+    expect(outDirect).toContain("--bundle");
+
+    // Also test execution via node process.execPath (Node 24)
+    const outNode = execFileSync(process.execPath, [binPath, "--help"], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    expect(outNode).toContain("Usage: zkq-auditor");
+    expect(outNode).toContain("--bundle");
   });
 });

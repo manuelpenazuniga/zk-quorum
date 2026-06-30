@@ -7,14 +7,14 @@
   "type": "module",
   "main": "./src/index.ts",
   "bin": {
-    "zkq-auditor": "./dist/cli.js"
+    "zkq-auditor": "./bin/zkq-auditor.js"
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "auditor": "tsx ./src/cli.ts"
+    "auditor": "node ./bin/zkq-auditor.js"
   },
   "dependencies": {
     "@zk-quorum/protocol": "file:../../packages/protocol",
