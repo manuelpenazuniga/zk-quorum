@@ -127,11 +127,13 @@ GPT-5.5 high es auditor premium read-only. Se invoca:
 Comando validado:
 
 ```bash
-codex --ask-for-approval never exec \
+codex exec \
+  -C '/ruta/absoluta/al/worktree' \
   --ephemeral \
   --sandbox read-only \
   --model gpt-5.5 \
   -c 'model_reasoning_effort="high"' \
+  --output-last-message /tmp/zkq-gpt55-audit.txt \
   "<prompt de auditoría>"
 ```
 
@@ -170,28 +172,43 @@ opencode run \
 Worker ligero:
 
 ```bash
-agy --prompt "<task acotado>" \
+agy \
   --model 'Gemini 3.5 Flash (Medium)' \
-  --sandbox \
-  --print-timeout 5m
+  --add-dir '/ruta/absoluta/al/worktree-aislado' \
+  --dangerously-skip-permissions \
+  --print-timeout 900s \
+  -p "<task acotado>"
 ```
 
 Auditoría:
 
 ```bash
-agy --prompt "<auditoría estrictamente read-only del commit exacto>" \
+agy \
   --model 'Gemini 3.1 Pro (High)' \
-  --print-timeout 10m
+  --add-dir '/ruta/absoluta/al/worktree' \
+  --print-timeout 900s \
+  -p "<auditoría estrictamente read-only del commit exacto>"
 ```
+
+Comprobado con `agy 1.0.14`:
+
+- `-p`, `--print` y `--prompt` son alias de print mode;
+- `--add-dir` debe recibir el worktree mediante path absoluto;
+- un worker no puede aprobar escrituras interactivamente en print mode, por lo
+  que sólo el worker aislado recibe `--dangerously-skip-permissions`;
+- un auditor nunca recibe ese flag: las lecturas del `--add-dir` se permiten y
+  las escrituras quedan denegadas;
+- se usa `900s` por defecto para evitar resultados truncados.
 
 En la versión observada el 2026-06-30, `--sandbox` ejecutó `git` desde el
 directorio scratch de Antigravity y terminó en panic al buscar un worktree
-inexistente. Para auditorías de repo se omite temporalmente ese flag, se usan
-paths absolutos, el prompt prohíbe escrituras y Codex compara `git status/diff`
-antes y después. Se debe reactivar el sandbox cuando el CLI corrija el bug.
+inexistente. Se omite temporalmente para trabajo de repo, se exige worktree
+aislado al worker y Codex compara `git status/diff` antes y después de toda
+invocación. Se reactiva sólo cuando una sonda confirme el cwd correcto.
 
-Nunca se usa `--dangerously-skip-permissions` ni
-`--dangerously-bypass-approvals-and-sandbox`.
+Nunca se usa `--dangerously-bypass-approvals-and-sandbox`. El permiso amplio
+propio de `agy`, `--dangerously-skip-permissions`, se limita exclusivamente a
+workers ligeros sobre worktrees aislados.
 
 ## 7. Escalamiento y gates
 
@@ -201,11 +218,13 @@ trabajo ligero
 
 implementación producto
   -> MiniMax M3
-  -> Kimi K2.7 Code si cruza capas o M3 falla una vez
+  -> MiniMax M2.7 para correcciones mecánicas
+  -> Kimi K2.7 Code sólo con brief cerrado y revisión explícita de presupuesto
 
 implementación Rust/ZK
   -> DeepSeek V4 Pro
-  -> Kimi K2.7 Code si V4 no está disponible
+  -> esperar cuota o replanificar si V4 no está disponible
+  -> Kimi K2.7 Code sólo por excepción y una sesión acotada
 
 auditoría general
   -> Gemini 3.5 Flash High

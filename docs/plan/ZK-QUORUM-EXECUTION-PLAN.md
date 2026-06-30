@@ -854,7 +854,7 @@ read-only. Las variantes Low de Antigravity están prohibidas.
 |---|---|---|
 | Codex, esta sesión | plan, briefs, revisión y decisión de gate | no escribe código de producción |
 | DeepSeek V4 Pro | circuitos, Rust/Soroban, integración ZK y debug fino | OpenCode escaso; reservar para implementación pesada |
-| Kimi K2.7 Code | implementación multiarchivo y fallback complejo | OpenCode escaso; usar con acceptance cerrado |
+| Kimi K2.7 Code | implementación multiarchivo excepcional | costo observado alto; una sesión acotada, acceptance cerrado y revisión explícita de presupuesto |
 | MiniMax M3 | producto, relayer, web, scripts y CI | driver principal de producto |
 | MiniMax M2.7 | tests, fixtures, codemods y overflow | trabajo mecánico acotado |
 | Gemini 3.5 Flash Medium/High | worker ligero y auditoría amplia | descargar trabajo no crítico desde OpenCode |
@@ -867,9 +867,9 @@ No se crearán diez worktrees. La coordinación se mantiene acotada:
 
 ```text
 main/integration
-├── wt/crypto       DeepSeek V4 Pro → Kimi K2.7 Code
-├── wt/contract     DeepSeek V4 Pro → Kimi K2.7 Code
-└── wt/product      MiniMax M3 → Kimi K2.7 Code / MiniMax M2.7
+├── wt/crypto       DeepSeek V4 Pro; Kimi sólo por excepción presupuestada
+├── wt/contract     DeepSeek V4 Pro; Kimi sólo por excepción presupuestada
+└── wt/product      MiniMax M3 / MiniMax M2.7; Kimi sólo por excepción
 
 auditorías read-only:
 ├── Codex: revisión continua y gate
@@ -942,8 +942,13 @@ No se acepta “done” sin tests o evidencia explícita de por qué no aplican.
 ### 11.5 Reglas de escalamiento
 
 - M3 encuentra un problema ZK/Rust no mecánico: escala inmediatamente a V4 Pro.
-- M3 falla una vez por comprensión multiarchivo: entrega diagnóstico y escala a Kimi K2.7 Code.
-- V4 Pro no está disponible por cuota/billing: Kimi K2.7 Code toma el brief exacto; no se deja una sesión esperando.
+- M3 falla una vez por comprensión multiarchivo: entrega diagnóstico; se
+  reintenta con M3/M2.7 o se autoriza una única sesión Kimi después de revisar
+  presupuesto.
+- V4 Pro no está disponible por cuota/billing: el lane se replanifica o espera
+  cuota. Kimi no es fallback automático.
+- Kimi recibe sólo briefs cerrados, una sesión simultánea como máximo y se
+  detiene si entra en diagnóstico iterativo sin converger.
 - M2.7 falla una vez por contexto: escala a M3.
 - `agy` Medium hace trabajo ligero; sólo High participa en un gate.
 - Fallback `agy`: Flash Medium → Flash High → Gemini 3.1 Pro High. Si Pro High
@@ -990,42 +995,53 @@ opencode run \
 Worker ligero:
 
 ```bash
-agy --prompt "Ejecuta sólo el task ligero indicado..." \
+agy \
   --model 'Gemini 3.5 Flash (Medium)' \
-  --sandbox \
-  --print-timeout 5m
+  --add-dir '/ruta/absoluta/al/worktree-aislado' \
+  --dangerously-skip-permissions \
+  --print-timeout 900s \
+  -p "Ejecuta sólo el task ligero indicado..."
 ```
 
 Auditoría security/soundness:
 
 ```bash
-agy --prompt "Auditoría estrictamente read-only del commit exacto..." \
+agy \
   --model 'Gemini 3.1 Pro (High)' \
-  --print-timeout 10m
+  --add-dir '/ruta/absoluta/al/worktree' \
+  --print-timeout 900s \
+  -p "Auditoría estrictamente read-only del commit exacto..."
 ```
 
-El audit usa paths absolutos y Codex verifica el diff antes/después. El
-`--sandbox` de la versión instalada queda suspendido para auditoría de repo
-porque ejecutó Git desde un scratch incorrecto y terminó en panic; ver ledger
-§18.8. Se reactiva cuando una sonda reproduzca correctamente el cwd.
+El worker usa un worktree aislado y necesita
+`--dangerously-skip-permissions` porque print mode no puede aprobar writes de
+forma interactiva. El auditor no recibe ese flag y queda read-only. Ambos usan
+`--add-dir` absoluto; Codex verifica el diff antes/después. `--sandbox` queda
+suspendido para repo porque la versión instalada ejecutó Git desde un scratch
+incorrecto y terminó en panic; ver ledger §18.8. Se reactiva cuando una sonda
+reproduzca correctamente el cwd.
 
 Auditoría premium:
 
 ```bash
-codex --ask-for-approval never exec \
+codex exec \
+  -C '/ruta/absoluta/al/worktree' \
   --ephemeral \
   --sandbox read-only \
   --model gpt-5.5 \
   -c 'model_reasoning_effort="high"' \
+  --output-last-message /tmp/zkq-gpt55-audit.txt \
   "Auditoría estrictamente read-only del commit exacto..."
 ```
 
 Nunca usar:
 
 ```text
---dangerously-skip-permissions
 --dangerously-bypass-approvals-and-sandbox
 ```
+
+`--dangerously-skip-permissions` sólo está permitido en `agy` para workers
+ligeros, dentro de un worktree aislado y nunca durante auditorías.
 
 ---
 
@@ -1707,8 +1723,10 @@ plan
 
 `explore` y `general` están configurados como subagents; invocarlos directamente
 con `opencode run --agent explore` hace fallback a `build`. OpenCode Go queda
-restringido a implementación; los auditores vigentes usan `agy --sandbox` o
-Codex CLI `--sandbox read-only`.
+restringido a implementación; los auditores vigentes usan
+`agy --add-dir <path-absoluto>` sin permisos de escritura o Codex CLI
+`--sandbox read-only`. El `--sandbox` de `agy 1.0.14` permanece suspendido por
+el bug de cwd documentado en el ledger.
 
 ### A.5 Auditorías iniciales OpenCode — registro histórico
 

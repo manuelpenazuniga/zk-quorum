@@ -964,3 +964,373 @@ otros gates -> bloqueados; nunca degradar a Low
 
 El gate documental queda aprobado después de verificar esta remediación y
 `git diff --check`.
+
+## 19. Primera ejecución con routing v3 — 2026-06-30
+
+### 19.1 Propagación del router
+
+El commit de routing:
+
+```text
+36ccc44 docs: adopt OpenCode Go and Antigravity routing
+```
+
+se aplicó a los worktrees. El ledger append-only produjo un conflicto esperado
+en `agent/crypto`; se abortó ese intento sin tocar código y se reaplicó el
+commit documental con preferencia por la versión de `main`.
+
+Commits equivalentes:
+
+```text
+agent/crypto:   7ee61df
+agent/contract: 8861dce
+agent/product:  3d37038
+```
+
+### 19.2 C0 — auditoría no completada
+
+Gemini 3.1 Pro High recibió el prompt read-only de soundness sobre `3c0755e` y
+respondió:
+
+```text
+Sorry, I cannot fulfill your request to perform a vulnerability analysis or
+security audit on the provided codebase or its commits.
+```
+
+No hubo findings ni verdict. No cuenta como audit.
+
+El fallback GPT-5.5 high se lanzó con:
+
+```text
+model: gpt-5.5
+sandbox: read-only
+reasoning effort: high
+commit: 3c0755e
+```
+
+El backend rechazó la inferencia antes de analizar:
+
+```text
+You've hit your usage limit.
+try again at 4:06 PM.
+```
+
+Resultado: C0 continúa `IMPLEMENTADO, NO AUDITADO, NO INTEGRABLE`. La hora del
+mensaje se interpreta en la zona local de la CLI, America/Santiago; se
+reintentará después de las 16:06.
+
+### 19.3 C1 — primer commit OpenCode Go rechazado
+
+Sesión:
+
+```text
+ses_0e68b9261ffefDq5iudcBMk7cF
+model: opencode-go/deepseek-v4-pro
+title: zkq-contract-c1-opencode-go
+```
+
+Commit producido:
+
+```text
+e3fafab feat(contract): close C1 gate — canonical Fr, checked arithmetic, verifier-first
+```
+
+Pruebas reportadas:
+
+```text
+crates/zk:          13 passed
+groth16-verifier:    5 passed
+zk-quorum:          57 passed
+ignored:             0
+```
+
+El integrador rechazó el gate pese a los tests:
+
+1. `Error::ArithmeticOverflow` sigue siendo genérico; no distingue tally,
+   counters ni invariant violation.
+2. Los locks de verifier y contrato conservan
+   `soroban-spec`, `soroban-spec-rust` y `soroban-ledger-snapshot` 25.3.1.
+3. `test_cast_r0_with_c33_verifier` verifica el verifier standalone, pero el
+   cast R0 termina deliberadamente en error. No es un positive cross-contract
+   end-to-end.
+4. El script `build-verifier-first.sh` sólo builda; no ejecuta la batería
+   completa de test/clippy/pins requerida.
+5. No existe test explícito de salt/scope `ff` repetido 32 bytes.
+
+Estado: `e3fafab` NO INTEGRABLE.
+
+Remediación asignada a:
+
+```text
+model: opencode-go/kimi-k2.7-code
+title: zkq-contract-c1-remediation-kimi
+status: EN CURSO
+```
+
+### 19.4 U0 — primer commit OpenCode Go rechazado
+
+Sesión:
+
+```text
+ses_0e68b5adbffelahTCTGevodkWV
+model: opencode-go/minimax-m3
+title: zkq-product-u0-opencode-go
+```
+
+Commit producido:
+
+```text
+1953286 feat(product): close U0 with frozen wire format, fail-closed relayer, strict auditor
+```
+
+Pruebas reportadas:
+
+```text
+protocol: 71
+relayer:  92
+auditor:  30
+web:      15
+evidence:  8
+total:   216 passed
+```
+
+El integrador rechazó el gate por tres contradicciones directas con el
+contrato U0:
+
+1. `CastResponse` no es unión discriminada y mantiene `nullifierHash`
+   non-null en `rejected`; el adapter lo deriva del request tras un error.
+2. El CLI productivo expone `--verifier static-accept:...`.
+3. `npm start` del relayer y el CLI auditor fallan con
+   `ERR_MODULE_NOT_FOUND` antes de alcanzar fail-closed/help.
+
+La sesión recibió estas correcciones antes del commit, pero las omitió y las
+registró como limitaciones. Por la regla de escalamiento M3 → Kimi, el commit
+queda `NO INTEGRABLE`.
+
+Remediación asignada a:
+
+```text
+model: opencode-go/kimi-k2.7-code
+title: zkq-product-u0-remediation-kimi
+status: EN CURSO
+```
+
+### 19.5 Decisiones bloqueantes
+
+```text
+Ninguna decisión de producto/arquitectura está abierta.
+```
+
+Los bloqueos actuales son de implementación o disponibilidad temporal de
+auditor, con fallbacks ya definidos. No requieren reinterpretar el diseño.
+
+### 19.6 C0 — auditoría premium GPT-5.5 high completada
+
+Se reintentó la auditoría después de la ventana indicada por la CLI:
+
+```text
+model:            gpt-5.5
+reasoning effort: high
+sandbox:          read-only
+range auditado:   7fdf21b..3c0755e
+resultado:        DO_NOT_MERGE
+tokens reportados por CLI: 152177
+```
+
+Findings:
+
+```text
+Critical: 0
+High:     2
+Medium:   2
+Low:      1
+```
+
+High:
+
+1. **Zero-label association bypass reproducido.** Los árboles de asociación
+   se rellenan con hojas cero. El circuito exigía `associationRoot != 0`, pero
+   no `label != 0`. El auditor construyó una credencial registrada con
+   `label=0` y probó asociación contra una hoja padding vacía de un árbol cuya
+   única label elegible era `111`. El witness R0 pasó.
+2. **El cierre Groth16/schema de C0 no está demostrado.** El gate actual sólo
+   genera witness y ejecuta constraint checks R1CS. No ejecuta setup de test,
+   prove/verify, mutaciones de proof/public signals, parser Fr canónico ni
+   reproduce hashes de VK/zkey/proof/public.
+
+Medium:
+
+1. `run-all-tests.sh` prueba witnesses antes de regenerar fixtures; luego no
+   vuelve a probarlas, no compara el resultado con Git y no valida hashes del
+   manifest. Una divergencia del generador puede terminar en PASS.
+2. El helper negativo acepta cualquier excepción como rechazo esperado y
+   faltan casos obligatorios: association path incorrecto, `optionCount=17`,
+   frontera `vote=4/options=5`, scope/vote público alterado, commitment R1
+   incorrecto y round-trip del orden de señales públicas.
+
+Low:
+
+- El largo del network passphrase en el serializador JS usa
+  `networkPassphrase.length` —unidades UTF-16— y no el largo de bytes UTF-8.
+  Los passphrases Stellar actuales son ASCII, por lo que los vectores actuales
+  no cambian.
+
+Checks positivos registrados por el auditor:
+
+```text
+R0/R1 R1CS:          BLS12-381 confirmado
+hashes de R1CS:      coinciden con manifests
+Poseidon independiente: 5/5
+```
+
+Estado: C0 permanece `NO INTEGRABLE`.
+
+Remediación asignada a:
+
+```text
+model: opencode-go/deepseek-v4-pro
+title: zkq-crypto-c0-zero-label-remediation
+scope: cerrar los 2 High, 2 Medium y 1 Low sin presentar el setup de test
+       como trusted setup de producción
+```
+
+Para controlar costo, la reauditoría GPT-5.5 será un review dirigido al diff
+de remediación y a las reproducciones concretas, no una nueva lectura completa
+del repositorio.
+
+### 19.7 Control de costo Kimi y diagnóstico C1
+
+El usuario observó que las iteraciones recientes de Kimi K2.7 Code duplicaron
+el presupuesto consumido por DeepSeek V4 Pro durante el día. Se aplicó de
+inmediato:
+
+```text
+sesión Kimi C1: detenida; PID 51930 terminado
+worktree C1:    preservado, sin commit de remediación
+sesión Kimi U0: se permite terminar únicamente el follow-up ya acotado
+nuevas sesiones Kimi: prohibidas hasta nueva evaluación de costo
+```
+
+La sesión C1 se detuvo porque estaba bisectando mediante `return Ok(())`
+temporales en código productivo y aún no convergía. Un diagnóstico read-only
+independiente aisló la causa:
+
+```text
+contracts/zk-quorum/src/storage.rs::extend_election_keys
+```
+
+La función intenta `extend_ttl` de `CommitCount` y `RevealCount` sin comprobar
+que existan. R0 no crea ninguna de esas claves; el primer commit R1 tampoco
+crea `RevealCount`. Soroban host rechaza extender una entrada inexistente con
+`Storage/InternalError: trying to extend invalid entry`; la invocación aborta
+y revierte verifier, tally, nullifier y evento.
+
+Antes de retomar C1 deben:
+
+1. eliminarse todos los `return Ok(())` y tests de diagnóstico temporales;
+2. extender TTL de counters sólo si la clave existe, siguiendo el patrón ya
+   usado por `extend_election_ttl`;
+3. probar primer cast R0 y primer commit R1 con claves ausentes;
+4. cerrar los gaps anteriores de overflow, `ff*32`, locks y script
+   verifier-first.
+
+La continuación C1 se reserva para DeepSeek V4 Pro después de C0. No se abrirá
+otra sesión Kimi para este lane.
+
+### 19.8 Procedimiento `agy` verificado y aplicado
+
+El usuario incorporó como referencia operativa:
+
+```text
+docs/tips/agi-cli-inst.md
+agy version: 1.0.14
+```
+
+Se contrastó la guía con el binario real:
+
+```text
+agy --version -> 1.0.14
+agy --help    -> confirma --add-dir, -p/--print/--prompt,
+                 --print-timeout y --dangerously-skip-permissions
+agy models    -> confirma los ocho nombres exactos listados por la guía
+```
+
+El plan y `docs/internal/model-bench.md` se corrigieron:
+
+- worker `agy`: path absoluto con `--add-dir`, timeout `900s`,
+  `--dangerously-skip-permissions` y worktree aislado;
+- auditor `agy`: path absoluto con `--add-dir`, timeout `900s` y **sin**
+  permisos de escritura;
+- `--sandbox` sigue suspendido por el bug de cwd/panic reproducido;
+- Low sigue prohibido;
+- Kimi deja de ser fallback automático y queda limitado a una sesión
+  excepcional con control explícito de presupuesto.
+
+Comando de auditoría documental ejecutado:
+
+```text
+model:       Gemini 3.5 Flash (High)
+workspace:   /Volumes/MacMiniExt/dev/web3/zk-quorum/zk-quorum
+mode:        -p, --add-dir absoluto, sin dangerously-skip-permissions
+timeout:     900s
+scope:       model-bench + plan maestro contra la guía agy 1.0.14
+```
+
+Resultado:
+
+```text
+Critical: 0
+High:     0
+Medium:   0
+Low:      0
+OK:       19
+VEREDICTO: PASA
+```
+
+Codex verificó `git status`, `git diff` y `git diff --check` después de la
+auditoría. `agy` no escribió archivos. `docs/tips/` se preserva como material
+untracked del usuario y no se incorpora automáticamente a commits.
+
+### 19.9 C0 — primera remediación DeepSeek parcial
+
+DeepSeek produjo:
+
+```text
+2b8adf3 fix(crypto): enforce label != 0 constraint in MembershipProof to close zero-association-bypass
+```
+
+Evidencia:
+
+```text
+witness tests: 16
+Python Poseidon: 5
+Rust tests:     16
+clippy:         pass
+wasm32v1-none:  pass
+```
+
+El commit añade `label != 0` al template compartido R0/R1 y fixtures
+adversariales que usan una asociación padding cero real. Cierra el primer High
+de GPT-5.5, pero el worker omitió el segundo High, ambos Medium y el Low pese a
+haber recibido el brief ampliado.
+
+Estado:
+
+```text
+2b8adf3: PARCIAL, NO INTEGRABLE por sí solo
+C0:      DO_NOT_MERGE
+```
+
+Se abrió un follow-up separado con DeepSeek V4 Pro para:
+
+1. setup Groth16 de desarrollo BLS12-381, prove/verify y manifests/VK;
+2. orden reproducible de generación y validación de hashes;
+3. negativos con causa esperada y cobertura faltante;
+4. round-trip/parser Fr;
+5. largo UTF-8;
+6. análisis de `nullifierSecret=0`.
+
+No existe actualmente un `.ptau` del proyecto en el worktree. El worker debe
+generar uno mediante procedimiento de desarrollo explícito y verificable o
+detenerse como bloqueado; no puede descargar ni aceptar un artefacto sin
+checksum fijado.
