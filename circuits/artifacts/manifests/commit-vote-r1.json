@@ -9,13 +9,16 @@
     "max_options": 16,
     "r1cs": {
         "file": "main.r1cs",
-        "sha256": "TBD — regenerated each compile",
-        "constraints": "TBD — from 'circom --prime bls12381 --r1cs'",
-        "non_linear": "TBD",
-        "linear": "TBD",
-        "wires": "TBD",
-        "labels": "TBD",
-        "template_instances": "TBD"
+        "sha256": "29cf1d03350882a6112354c8dff3c2799c72679dc127502ab2d2522ccabe2688",
+        "constraints": 15701,
+        "non_linear": 6094,
+        "linear": 9607,
+        "wires": 15706,
+        "labels": 27597,
+        "template_instances": 77,
+        "public_inputs": 4,
+        "private_inputs": 27,
+        "public_outputs": 2
     },
     "public_schema": {
         "version": "V1_R1",
@@ -35,5 +38,6 @@
         "associationSiblings[10]", "associationIndex"
     ],
     "setup_power": 14,
-    "timestamp": "2026-06-29T00:00:00Z"
+    "setup_power_justification": "2^14 = 16384 > 15701 constraints. Minimum power that covers the constraint count.",
+    "timestamp": "2026-06-30T00:00:00Z"
 }

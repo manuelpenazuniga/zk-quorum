@@ -12,8 +12,15 @@
         "circom": "2.2.3",
         "prime": "bls12381",
         "circuit": "test_poseidon_vectors.circom",
-        "witness": "circuits/build/test/poseidon_witness_1_2_3.wtns",
+        "witness": "circuits/build/test_vectors/test_poseidon_vectors_js/test_poseidon_vectors.wasm",
         "rust_crate": "crates/credential",
-        "rust_test": "test_golden_p2_1_2, test_golden_p3seq_1_2_3, test_golden_p2_0_0, test_golden_p2_large, test_golden_credential_commitment"
+        "rust_test": "test_golden_p2_1_2, test_golden_p3seq_1_2_3, test_golden_p2_0_0, test_golden_p2_large, test_golden_credential_commitment",
+        "independent_engine": {
+            "language": "Python 3",
+            "script": "scripts/verify-poseidon-bigint.py",
+            "approach": "Pure Python big-integer arithmetic implementing BLS12-381 Poseidon255 permutation from scratch. Uses no Circom, snarkjs, or soroban-poseidon.",
+            "constants_source": "circuits/artifacts/fixtures/poseidon_constants_t3.json (extracted from poseidon255_constants.circom by scripts/extract-poseidon-constants.js)",
+            "result": "All 5 golden vectors verified (PASS)"
+        }
     }
 }

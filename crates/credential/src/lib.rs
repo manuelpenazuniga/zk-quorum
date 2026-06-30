@@ -9,6 +9,11 @@
 //
 // Matches plan §§5-6, D-007.
 
+#![no_std]
+
+extern crate alloc;
+
+use alloc::vec::Vec;
 use core::cmp::Ordering;
 use soroban_poseidon::poseidon_hash;
 use soroban_sdk::{crypto::bls12_381::Fr as BlsScalar, Bytes, BytesN, Env};
@@ -83,17 +88,57 @@ pub enum ElectionScopeError {
 ///   for counter in 0..=255:
 ///     digest = SHA-256(message || counter_u8)
 ///     if 0 < bigint(digest) < BLS12_381_SCALAR_MODULUS:
-///       return digest as canonical 32-byte big-endian
+///       return (digest as canonical 32-byte big-endian, counter)
 ///   fail
 ///
 /// Lengths are encoded as u32 big-endian.
 /// This is a host-side tooling function; the contract stores the pre-computed scope.
+///
+/// Returns the canonical 32-byte scope and the accepted counter.
+pub fn derive_election_scope_with_counter(
+    env: &Env,
+    network_passphrase: &[u8],
+    contract_id: &[u8; 32],
+    election_id: &[u8; 32],
+) -> Result<(BytesN<32>, u8), ElectionScopeError> {
+    let mut message = build_scope_message(network_passphrase, contract_id, election_id);
+
+    for counter in 0..=ELECTION_SCOPE_MAX_ATTEMPTS {
+        message.push(counter);
+
+        let input_bytes = Bytes::from_slice(env, &message);
+        let digest = env.crypto().sha256(&input_bytes);
+        let digest_arr: [u8; 32] = digest.to_array();
+
+        if !slice_is_zero(&digest_arr) && slice_is_lt_modulus(&digest_arr) {
+            return Ok((digest.to_bytes(), counter));
+        }
+
+        message.pop();
+    }
+
+    Err(ElectionScopeError::RejectionSamplingExhausted)
+}
+
+/// Convenience wrapper: derive electionScope, discarding the counter.
+/// Equivalent to `derive_election_scope_with_counter(...).map(|(s, _)| s)`.
 pub fn derive_election_scope(
     env: &Env,
     network_passphrase: &[u8],
     contract_id: &[u8; 32],
     election_id: &[u8; 32],
 ) -> Result<BytesN<32>, ElectionScopeError> {
+    derive_election_scope_with_counter(env, network_passphrase, contract_id, election_id)
+        .map(|(scope, _counter)| scope)
+}
+
+/// Build the fixed-length prefix of the scope derivation message (without the counter byte).
+/// Exposed for testing the exact message length vector.
+fn build_scope_message(
+    network_passphrase: &[u8],
+    contract_id: &[u8; 32],
+    election_id: &[u8; 32],
+) -> Vec<u8> {
     let domain_tag = ELECTION_SCOPE_DOMAIN_TAG;
     let mut message: Vec<u8> = Vec::new();
 
@@ -109,20 +154,14 @@ pub fn derive_election_scope(
     message.extend_from_slice(&(32_u32).to_be_bytes());
     message.extend_from_slice(election_id);
 
-    for counter in 0..=ELECTION_SCOPE_MAX_ATTEMPTS {
-        let mut input = message.clone();
-        input.push(counter);
+    message
+}
 
-        let input_bytes = Bytes::from_slice(env, &input);
-        let digest = env.crypto().sha256(&input_bytes);
-        let digest_arr: [u8; 32] = digest.to_array();
-
-        if !slice_is_zero(&digest_arr) && slice_is_lt_modulus(&digest_arr) {
-            return Ok(digest.to_bytes());
-        }
-    }
-
-    Err(ElectionScopeError::RejectionSamplingExhausted)
+/// Returns the prefix message length (excluding counter byte) for a given scope derivation.
+/// Used to validate the exact message length for ledger vectors.
+pub fn scope_message_len(network_passphrase: &[u8]) -> usize {
+    let domain_tag = ELECTION_SCOPE_DOMAIN_TAG;
+    4 + domain_tag.len() + 4 + network_passphrase.len() + 4 + 32 + 4 + 32
 }
 
 fn slice_is_zero(slice: &[u8]) -> bool {
@@ -139,6 +178,9 @@ fn slice_is_lt_modulus(candidate: &[u8]) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+extern crate std;
 
 #[cfg(test)]
 mod tests {
@@ -263,6 +305,58 @@ mod tests {
         assert_ne!(r1, r2);
     }
 
+    // ── Ledger §13 canonical scope vectors (exact bytes, counter, message length) ──
+
+    #[test]
+    fn test_ledger_scope_vector_a() {
+        let env = env();
+        let network = b"Test SDF Network ; September 2015";
+        let contract_id = [0x11u8; 32];
+        let election_id = [0x22u8; 32];
+
+        let msg_len = scope_message_len(network);
+        assert_eq!(msg_len, 140, "ledger §13: vector A message length must be 140");
+
+        let (scope, counter) =
+            derive_election_scope_with_counter(&env, network, &contract_id, &election_id).unwrap();
+
+        assert_eq!(counter, 0, "ledger §13: vector A counter must be 0");
+        let expected: [u8; 32] = hex_literal::hex!("0b667e4a71d35199a50ec46d35ad8112c97537ed9cba84eebbc51080106130a8");
+        assert_eq!(scope.to_array(), expected, "ledger §13: vector A exact scope mismatch");
+    }
+
+    #[test]
+    fn test_ledger_scope_vector_b() {
+        let env = env();
+        let network = b"Public Global Stellar Network ; September 2015";
+        let contract_id = [0xAAu8; 32];
+        let election_id = [0xBBu8; 32];
+
+        let (scope, counter) =
+            derive_election_scope_with_counter(&env, network, &contract_id, &election_id).unwrap();
+
+        assert_eq!(counter, 1, "ledger §13: vector B counter must be 1");
+        let expected: [u8; 32] = hex_literal::hex!("1a2d555082335dcf53d47a6e31cbdb1076a1c1f41d5ceca38421a55b01f4abb2");
+        assert_eq!(scope.to_array(), expected, "ledger §13: vector B exact scope mismatch");
+    }
+
+    #[test]
+    fn test_ledger_scope_vector_c() {
+        let env = env();
+        let network = b"Test SDF Network ; September 2015";
+        let contract_id = [0x01u8; 32];
+        let election_id = [0xFFu8; 32];
+
+        let (scope, counter) =
+            derive_election_scope_with_counter(&env, network, &contract_id, &election_id).unwrap();
+
+        assert_eq!(counter, 3, "ledger §13: vector C counter must be 3");
+        let expected: [u8; 32] = hex_literal::hex!("3042d22d781a4aa3b7cc9cd7d903ccf84d0de242657dbe616b181b6d09a4382c");
+        assert_eq!(scope.to_array(), expected, "ledger §13: vector C exact scope mismatch");
+    }
+
+    // ── Backward-compatible API & general properties ──
+
     #[test]
     fn test_election_scope_derivation() {
         let env = env();
@@ -271,7 +365,6 @@ mod tests {
         let election_id = [0x42u8; 32];
 
         let scope = derive_election_scope(&env, network, &contract_id, &election_id).unwrap();
-
         assert_eq!(scope.to_array().len(), 32);
         assert!(!slice_is_zero(&scope.to_array()));
 
@@ -299,6 +392,19 @@ mod tests {
         let scope1 = derive_election_scope(&env, network, &contract_id, &[0x01u8; 32]).unwrap();
         let scope2 = derive_election_scope(&env, network, &contract_id, &[0x02u8; 32]).unwrap();
         assert_ne!(scope1, scope2);
+    }
+
+    #[test]
+    fn test_derive_election_scope_with_counter_consistency() {
+        let env = env();
+        let network = b"Test SDF Network ; September 2015";
+        let contract_id = [0xCDu8; 32];
+        let election_id = [0xEFu8; 32];
+
+        let (scope_with_counter, _counter) =
+            derive_election_scope_with_counter(&env, network, &contract_id, &election_id).unwrap();
+        let scope = derive_election_scope(&env, network, &contract_id, &election_id).unwrap();
+        assert_eq!(scope_with_counter, scope, "backward-compat: derive_election_scope must match derive_election_scope_with_counter");
     }
 
     #[test]

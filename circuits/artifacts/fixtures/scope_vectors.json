@@ -1,0 +1,31 @@
+{
+  "description": "Canonical election scope vectors (execution ledger §13)",
+  "domain_tag": "zk-quorum:election-scope:v1",
+  "algorithm": "SHA-256 with rejection sampling to BLS12-381 Fr",
+  "vectors": [
+    {
+      "name": "scope-a",
+      "network": "Test SDF Network ; September 2015",
+      "contractHex": "1111111111111111111111111111111111111111111111111111111111111111",
+      "electionHex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "expectedScope": "0b667e4a71d35199a50ec46d35ad8112c97537ed9cba84eebbc51080106130a8",
+      "expectedCounter": 0
+    },
+    {
+      "name": "scope-b",
+      "network": "Public Global Stellar Network ; September 2015",
+      "contractHex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "electionHex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expectedScope": "1a2d555082335dcf53d47a6e31cbdb1076a1c1f41d5ceca38421a55b01f4abb2",
+      "expectedCounter": 1
+    },
+    {
+      "name": "scope-c",
+      "network": "Test SDF Network ; September 2015",
+      "contractHex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "electionHex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "expectedScope": "3042d22d781a4aa3b7cc9cd7d903ccf84d0de242657dbe616b181b6d09a4382c",
+      "expectedCounter": 3
+    }
+  ]
+}

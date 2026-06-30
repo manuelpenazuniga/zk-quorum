@@ -13,6 +13,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# ── Circom build output ─────────────────────────────────────────────────────
+circuits/build/
+
 # ── ZK artifacts — never versionar (per plan §6.5 y §17) ───────────────────
 # Powders of Tau, proving keys, witnesses, and proof blobs.
 *.ptau
