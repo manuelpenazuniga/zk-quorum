@@ -62,10 +62,11 @@ relayer-data/
 relayer.db
 relayer.db-journal
 
-# ── Soroban build outputs ──────────────────────────────────────────────────
+# ── Soroban build/test outputs ──────────────────────────────────────────────
 *.wasm
 *.wasm.map
 contract-bindings/
+**/test_snapshots/
 
 # ── OS / editor junk ───────────────────────────────────────────────────────
 .DS_Store

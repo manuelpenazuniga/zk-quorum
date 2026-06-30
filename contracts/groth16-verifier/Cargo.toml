@@ -1,0 +1,35 @@
+[package]
+name = "groth16-verifier"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+license = "MIT"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = "=25.1.0"
+soroban-sdk-macros = "=25.1.0"
+zk = { path = "../../crates/zk" }
+
+[dev-dependencies]
+soroban-sdk = { version = "=25.1.0", features = ["testutils"] }
+ark-bls12-381 = "0.4.0"
+ark-serialize = "0.4.2"
+ark-ff = "0.4.2"
+ark-ec = "0.4.2"
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

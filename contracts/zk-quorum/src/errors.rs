@@ -1,0 +1,43 @@
+use soroban_sdk::contracterror;
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Error {
+    AlreadyInitialized = 1,
+    NotAdmin = 2,
+    ElectionAlreadyExists = 3,
+    ElectionNotFound = 4,
+    ElectionNotOpen = 5,
+    ElectionNotStarted = 6,
+    ElectionClosed = 7,
+    InvalidOptionCount = 8,
+    VoteOutOfRange = 9,
+    RootMismatch = 10,
+    ScopeMismatch = 11,
+    NullifierAlreadyUsed = 12,
+    ProofVerificationFailed = 13,
+    MalformedProof = 14,
+    MalformedPublicSignals = 15,
+    InvalidSchema = 16,
+    InvalidMode = 17,
+    InvalidTimestamp = 18,
+    InvalidBallotCommitment = 19,
+    CommitmentNotFound = 20,
+    AlreadyRevealed = 21,
+    WrongSalt = 22,
+    RevealWindowClosed = 23,
+    InvalidRevealWindow = 24,
+    RevealNotOpen = 25,
+    SerializationFailed = 26,
+    CommitmentAlreadyExists = 27,
+    VkHashMismatch = 28,
+    CannotRecomputeCommitment = 29,
+    CanonicalSignalCheckFailed = 30,
+    ZeroSaltNotAllowed = 31,
+    VerifierCallFailed = 32,
+    ArithmeticOverflow = 33,
+    InvalidElectionScope = 34,
+    InvalidStateRoot = 35,
+    InvalidAssociationRoot = 36,
+}
