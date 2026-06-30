@@ -575,3 +575,91 @@ No se integra una lane si ocurre cualquiera de estos casos:
 La integración se hará commit por commit, con repetición independiente de
 tests desde el integrador y auditoría premium sólo después de corregir los
 hallazgos de workers.
+
+## 17. Recuperación de sesión y cuota — 2026-06-30
+
+La sesión del integrador terminó inesperadamente después de lanzar tres
+remediaciones frescas. Git, los worktrees y la base local de OpenCode
+permitieron reconstruir el estado sin inferencias.
+
+### 17.1 Causa confirmada
+
+El log local de OpenCode contiene, para MiniMax M3 y DeepSeek V4 Pro:
+
+```text
+AI_APICallError: 5-hour usage limit reached.
+Resets in 3hr 51min.
+```
+
+Los reintentos posteriores redujeron el contador hasta `3hr 43min`. No fue un
+deadlock del repositorio ni una tarea de razonamiento larga.
+
+Sesiones afectadas:
+
+```text
+ses_0ec63d39dffe7tLQXM2DxssGeB  crypto / DeepSeek V4 Pro
+ses_0ec63920dffe39ACoSkQMFOEv5  contract / DeepSeek V4 Pro
+ses_0ec63336dffeVWVkALuSoMi5Px  product / MiniMax M3
+```
+
+La base local confirmó para las tres respuestas:
+
+```text
+cost:             0
+tokens.input:     0
+tokens.output:    0
+tokens.reasoning: 0
+tool calls:       0
+```
+
+Por tanto, esas sesiones sólo conservan el prompt. No contienen trabajo
+parcial que deba recuperarse o reconciliarse.
+
+### 17.2 Estado durable recuperado
+
+```text
+main:             53a7612 antes de corregir CLAUDE*
+agent/crypto:     9b96da1 + scripts witness untracked
+agent/contract:   implementación completa sin commit
+agent/product:    37c7ad4 + remediación M3 sin commit
+```
+
+No apareció ningún commit nuevo ni cambio de archivo posterior al corte por
+cuota. Los cambios no commiteados previos permanecieron intactos.
+
+El integrador corrigió `CLAUDE.md` y `CLAUDE-MEMORY.md`, que todavía afirmaban
+que no existía producto versionado y que Stellar CLI estaba ausente:
+
+```text
+4ff0473 docs: recover current multi-agent state
+```
+
+### 17.3 Sincronización de documentación en worktrees
+
+Los worktrees habían sido creados antes del ledger y de la corrección de
+`CLAUDE*`. Antes de reanudar se interrumpieron las primeras sesiones del
+30/06, todavía read-only, y se incorporaron a cada rama únicamente estos tres
+commits documentales:
+
+```text
+14c7c95 docs: add multi-agent execution ledger
+53a7612 docs: link execution ledger from master plan
+4ff0473 docs: recover current multi-agent state
+```
+
+Esto evita que los agentes implementen contra el estado histórico. Al integrar
+las lanes a `main` se cherry-pickeará sólo el commit funcional final de cada
+lane; los equivalentes documentales ya existen en `main`.
+
+### 17.4 Reanudación
+
+Después del reset de cuota se relanzaron sesiones frescas:
+
+```text
+product:  MiniMax M3
+contract: DeepSeek V4 Pro
+crypto:   DeepSeek V4 Pro
+```
+
+La cuota quedó operativa: los tres modelos comenzaron lecturas y tool calls.
+Los gates y ownership no cambiaron.
