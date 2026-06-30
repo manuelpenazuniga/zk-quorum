@@ -52,7 +52,7 @@ R1: ballotCommitment = P2(P2(vote, salt), electionScope)
 - `associationRoot`: labels elegibles; no se permite zero bypass.
 - `electionScope`: SHA-256 domain-separated con rejection sampling a Fr,
   ligado a red, contrato y election ID. La versión está en el domain tag
-  `zk-quorum:election-scope:v1`; no existe un byte de versión adicional.
+  `zk-quorum:election-scope:v1`, sin byte adicional.
 - No se usa Poseidon directo de tres inputs: upstream tiene evidencia
   contradictoria para esa aridad.
 
@@ -68,45 +68,30 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 ## Estado real
 
-- Plan maestro y ledger multiagente versionados en `main`.
-- Foundation reproducible: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6,
-  Stellar CLI 27 y `wasm32v1-none`.
-- Worktrees aislados: `agent/crypto`, `agent/contract` y `agent/product`.
-- Crypto termina en `3c0755e`: 14 witness tests, 16 Rust tests, tercer engine,
-  `no_std`, manifests y checks estrictos de Circom/snarkjs pasan. Falta
-  auditoría vigente con Gemini 3.1 Pro High y cherry-pick.
-- Producto conserva una remediación M3 amplia sin commit. La sesión fue
-  interrumpida con un test de canonicalización todavía rojo; no es integrable.
-- Contrato conserva implementación sin commit con verifier positivo y
-  `contractimport!`, pero siguen abiertos checks canónicos Fr, validación de
-  roots/scope y reemplazo de arithmetic saturating.
-- No se han integrado las lanes a `main`; no hay despliegue ni setup final.
-- La cuota OpenCode del 2026-06-29 y un intento posterior con el provider
-  incorrecto `opencode/...` no autorizan ningún gate. Toda nueva ejecución usa
-  IDs `opencode-go/...`.
-- `spike/package.json`, su lockfile y cualquier otro untracked ajeno deben
-  preservarse y nunca entrar por accidente a commits de las lanes.
+- Plan, foundation y ledger están versionados en `main`.
+- Toolchain: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6, Stellar CLI 27
+  y `wasm32v1-none`.
+- `agent/crypto` termina en `3c0755e`; su suite limpia pasa y falta auditoría
+  vigente/integración.
+- `agent/contract` conserva implementación sin commit y blockers canónicos/
+  overflow; no es integrable.
+- `agent/product` conserva remediación sin commit y al menos un test rojo; no
+  es integrable.
+- No se han integrado lanes ni ejecutado setup final, testnet o carga.
+- Los untracked `spike/package.json` y `spike/package-lock.json` son ajenos y
+  deben preservarse.
 
 ## Routing vigente
 
-- Codex: planifica, escribe briefs, revisa evidencia y decide gates; no escribe
-  código de producción.
-- OpenCode Go: implementación pesada con DeepSeek V4 Pro, Kimi K2.7 Code,
-  MiniMax M3 y MiniMax M2.7.
-- `agy`: Gemini 3.5 Flash Medium/High para trabajo ligero y auditoría;
-  Gemini 3.1 Pro High para security/soundness. No usar Low.
-- GPT-5.5 high por Codex CLI: auditoría premium C1/A0 y cualquier hito con
-  fondos.
+- Codex: plan, briefs, revisión y gates; no escribe código de producción.
+- OpenCode Go implementa: DeepSeek V4 Pro y Kimi K2.7 Code para ZK/Rust e
+  integración compleja; MiniMax M3 para producto; MiniMax M2.7 para tests y
+  trabajo mecánico.
+- `agy` audita y hace trabajo ligero: Gemini 3.5 Flash Medium/High y Gemini
+  3.1 Pro High. No usar variantes Low.
+- GPT-5.5 high por Codex CLI: audit premium C1/A0 y cualquier hito con fondos.
 - Qwen 3.7 Max y GLM-5.2 están retirados por costo, no por calidad.
+- Todos los modelos OpenCode deben usar IDs `opencode-go/...`; no OpenCode Zen.
 
-## Gate actual
-
-P1 y foundation están cerrados. Están abiertos en paralelo:
-
-1. C0: reproducibilidad crypto;
-2. C1: verifier/contrato Soroban;
-3. U0: protocolo, relayer y auditor.
-
-No integrar una lane con Critical/High, tests ignorados, mocks aceptantes,
-scripts sin versionar o toolchain fuera de pin. El estado detallado está en
-`docs/plan/OPEN-CODE-EXECUTION-LOG.md`.
+P1 y foundation están cerrados. Antes de integrar una lane deben estar verdes
+sus tests y las auditorías vigentes sin Critical/High.

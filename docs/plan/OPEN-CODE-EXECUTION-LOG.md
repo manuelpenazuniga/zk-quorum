@@ -36,7 +36,10 @@ No se acepta como evidencia:
 - un test ejecutado con una versión distinta de la fijada;
 - un árbol de trabajo sucio como entregable integrable.
 
-## 2. Autorización y límites
+## 2. Autorización y límites — histórico inicial
+
+> Reemplazado operativamente por §18 desde el 2026-06-30. Se conserva como
+> evidencia de la autorización original.
 
 El usuario autorizó explícitamente:
 
@@ -56,7 +59,9 @@ Se preservan como cambios ajenos al trabajo:
 
 No deben borrarse, modificarse ni incluirse accidentalmente en un commit.
 
-## 3. Routing costo/beneficio aplicado
+## 3. Routing costo/beneficio aplicado — histórico inicial
+
+> No usar para nuevas sesiones. El router vigente está en §18.4.
 
 | Rol | Modelo | Uso real | Estado |
 |---|---|---|---|
@@ -545,7 +550,9 @@ Supuestos operativos mientras no se indique otra cosa:
 - no-reveal: se informa y audita, no se inventa penalidad on-chain;
 - contenido privado: minimización y no logs de IP/credential/salt/proof.
 
-## 15. Próximos gates
+## 15. Próximos gates — snapshot anterior al cambio de routing
+
+> Los owners de auditoría de esta tabla fueron reemplazados por §18.6.
 
 | Gate | Requisito | Estado |
 |---|---|---|
@@ -663,3 +670,297 @@ crypto:   DeepSeek V4 Pro
 
 La cuota quedó operativa: los tres modelos comenzaron lecturas y tool calls.
 Los gates y ownership no cambiaron.
+
+## 18. Cambio mayor de routing — 2026-06-30
+
+Esta sección reemplaza operativamente las asignaciones de modelos de §§2, 3,
+15 y 17.4. Los registros anteriores se conservan porque describen decisiones y
+sesiones históricas.
+
+### 18.1 Decisión del usuario
+
+El usuario ordenó:
+
+1. retirar Qwen 3.7 Max y GLM-5.2 por costo operacional —una cuenta consumida
+   en un día—, no por calidad;
+2. usar modelos OpenCode sólo a través de OpenCode Go, nunca OpenCode Zen;
+3. reservar OpenCode para implementación pesada;
+4. usar `agy`/Antigravity como worker ligero y auditor;
+5. prohibir variantes Low de Gemini;
+6. usar GPT-5.5 high como audit premium;
+7. limitar Codex a planificación, briefs, auditoría y gates, sin escritura de
+   código de producción.
+
+### 18.2 Inventario de CLI verificado
+
+Versiones:
+
+```text
+codex-cli 0.142.3
+opencode 1.17.11
+agy instalado en /Users/mpz/.local/bin/agy
+```
+
+Comando:
+
+```bash
+opencode models opencode-go
+```
+
+Salida relevante:
+
+```text
+opencode-go/deepseek-v4-pro
+opencode-go/kimi-k2.7-code
+opencode-go/minimax-m2.7
+opencode-go/minimax-m3
+```
+
+Comando:
+
+```bash
+agy models
+```
+
+Salida relevante:
+
+```text
+Gemini 3.5 Flash (Medium)
+Gemini 3.5 Flash (High)
+Gemini 3.1 Pro (High)
+```
+
+También se listaron variantes Low. No pertenecen al router autorizado.
+
+Sonda `agy`:
+
+```bash
+agy --print \
+  --model 'Gemini 3.5 Flash (Medium)' \
+  --sandbox \
+  --print-timeout 2m \
+  'Return exactly: AGY FLASH MEDIUM AVAILABLE'
+```
+
+Resultado:
+
+```text
+I am currently running on the Gemini 3.5 Flash model.
+exit code 0
+```
+
+Esta primera sonda confirmó selección de modelo, pero no recepción del prompt:
+la sintaxis posicional con `--print` no pasó el texto esperado. La sintaxis
+validada posteriormente es:
+
+```bash
+agy --prompt 'Return exactly: AGY_PROMPT_RECEIVED' \
+  --model 'Gemini 3.5 Flash (Medium)' \
+  --sandbox \
+  --print-timeout 2m
+```
+
+Resultado:
+
+```text
+AGY_PROMPT_RECEIVED
+exit code 0
+```
+
+Sonda GPT-5.5 high:
+
+```bash
+codex --ask-for-approval never exec \
+  --ephemeral \
+  --skip-git-repo-check \
+  --sandbox read-only \
+  --model gpt-5.5 \
+  -c 'model_reasoning_effort="high"' \
+  'Return exactly: GPT-5.5 HIGH CLI AVAILABLE'
+```
+
+Metadatos y resultado observados:
+
+```text
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+GPT-5.5 HIGH CLI AVAILABLE
+exit code 0
+tokens reported by CLI: 14,057
+```
+
+El CLI registró dos errores de autorización de un transporte MCP auxiliar,
+pero la inferencia GPT-5.5 terminó correctamente. Para auditoría real se debe
+verificar el exit code y el informe, no inferir fallo por ese warning.
+
+### 18.3 Corrección sobre el diagnóstico de billing
+
+Los intentos posteriores a la recuperación invocaron por error:
+
+```text
+opencode/deepseek-v4-pro
+opencode/minimax-m3
+```
+
+El primero respondió:
+
+```text
+No payment method.
+```
+
+Esos IDs corresponden a otro provider y no prueban indisponibilidad de
+OpenCode Go. Desde esta decisión sólo son válidos IDs `opencode-go/...`.
+Esperar, reintentar o pagar OpenCode Zen queda fuera del flujo.
+
+### 18.4 Routing vigente
+
+| Rol | Herramienta/modelo | Restricción |
+|---|---|---|
+| Plan/brief/gate | Codex | no código de producción |
+| Crypto/Rust/Soroban | OpenCode Go / DeepSeek V4 Pro | implementación pesada |
+| Integración compleja/fallback | OpenCode Go / Kimi K2.7 Code | brief y acceptance cerrados |
+| Producto | OpenCode Go / MiniMax M3 | TypeScript, relayer, web, CI |
+| Mecánico/overflow | OpenCode Go / MiniMax M2.7 | tests, fixtures, codemods |
+| Worker ligero | Gemini 3.5 Flash Medium | no gate crítico |
+| Audit producto/release | Gemini 3.5 Flash High | read-only |
+| Audit security/soundness | Gemini 3.1 Pro High | read-only |
+| Audit premium C1/A0 | GPT-5.5 high | read-only, commit exacto |
+
+Qwen 3.7 Max y GLM-5.2 quedan `RETIRADOS`. Sus informes históricos siguen
+siendo evidencia del commit que examinaron, pero no reciben tareas nuevas.
+
+### 18.5 Estado técnico al cambiar el router
+
+Crypto:
+
+```text
+827de58 feat(crypto): close C0 gate — no_std, independent engine, scope vectors, manifests, reproducible build
+3c0755e fix(crypto): enforce pinned reproducibility checks
+```
+
+La auditoría Qwen histórica de `827de58` reportó 0 Critical y 0 High, pero
+omitió un bug real de sustitución de comando en `run-all-tests.sh`. Codex lo
+detectó y corrigió antes de que entrara en vigor la prohibición de escribir
+código de producción. `3c0755e`:
+
+- compara Circom exactamente con 2.2.3;
+- lee snarkjs real desde package metadata y exige 0.7.6;
+- valida 192 round constants y matriz MDS 3×3;
+- elimina dos helpers sin uso.
+
+Ejecución independiente:
+
+```text
+Node v24.2.0
+circom 2.2.3
+snarkjs 0.7.6
+14 witness passed, 0 failed
+Python BigInt Poseidon 5 passed, 0 failed
+Rust 16 passed, 0 failed, 0 ignored
+cargo clippy -D warnings: pass
+wasm32v1-none --no-default-features: pass
+```
+
+Contrato:
+
+- implementación aún sin commit;
+- verifier positivo y `contractimport!` existen;
+- siguen abiertos parsing Fr `raw < r`, `ic_len > 0`, validación no-cero de
+  roots/scope/salt, eliminación de `saturating_add/sub`, pin completo Soroban y
+  script verifier-first.
+
+Producto:
+
+- remediación M3 amplia aún sin commit;
+- public signals migraron parcialmente a decimal Fr canónico;
+- la sesión fue interrumpida mientras un test convertía también `0x` a `0X`;
+- no se acepta hasta eliminar debug temporal, pasar suites completas y auditar
+  adapters fail-closed.
+
+### 18.6 Gates actualizados
+
+| Gate | Estado | Próxima acción |
+|---|---|---|
+| C0 | IMPLEMENTADO, NO INTEGRADO | Gemini 3.1 Pro High audita `3c0755e`; Codex repite gate |
+| C1 | RECHAZADO / EN REMEDIACIÓN | OpenCode Go V4 Pro o Kimi implementa blockers; `agy` Pro + GPT-5.5 high auditan |
+| U0 | EN REMEDIACIÓN | OpenCode Go M3 termina suite; Flash High audita |
+| I0 | PENDIENTE | sólo después de C0/C1/U0 limpios |
+| A0 | PENDIENTE | `agy` High + GPT-5.5 high sin Critical/High |
+
+### 18.7 Preguntas bloqueantes
+
+```text
+Ninguna.
+```
+
+El router, fallbacks, herramientas, modelos, gates y prohibiciones están
+cerrados. La hora exacta externa del deadline sigue siendo una pregunta
+operacional no bloqueante hasta despliegue/submission.
+
+### 18.8 Auditoría del cambio de routing
+
+Primer intento:
+
+```text
+modelo solicitado: Gemini 3.1 Pro (High)
+modo:              agy --print --sandbox, sintaxis luego declarada inválida
+timeout:           10m
+resultado:         Error: timeout waiting for response
+```
+
+Antes del timeout el agente anunció que inspeccionaría su propia guía y CLI en
+vez de limitarse a los archivos pedidos. No produjo findings ni verdict; por
+tanto no cuenta como auditoría ni gate.
+
+Se relanzó una auditoría acotada con Gemini 3.5 Flash High usando la misma
+sintaxis inválida. Terminó con exit 0, pero sólo informó el nombre del modelo;
+no produjo findings ni verdict y tampoco cuenta como gate.
+
+La siguiente auditoría debe usar `agy --prompt '<texto>'`, sintaxis confirmada
+por la sonda `AGY_PROMPT_RECEIVED`.
+
+Tercer intento, con prompt correctamente recibido y `--sandbox`:
+
+```text
+promptLength=806
+modelo=Gemini 3.5 Flash (High)
+git status -> fatal: not a git repository
+cwd efectivo del tool -> scratch de Antigravity
+error posterior -> directorio .../antigravity-cli/worktrees no existe
+resultado -> panic: invalid memory address / nil pointer dereference
+exit code 2
+```
+
+No produjo informe. Es un bug de cwd/sandbox del CLI, no del repositorio.
+
+Cuarto intento: `agy --prompt`, sin el sandbox defectuoso, prompt read-only,
+repo y comandos con paths absolutos. Codex verificó que el árbol no recibió
+cambios del auditor.
+
+Resultado de Gemini 3.5 Flash High:
+
+```text
+Critical: 0
+High:     0
+Medium:   0
+Low:      1
+VERDICT:  MERGE
+```
+
+Hallazgo Low:
+
+- `docs/internal/model-bench.md` no explicitaba fallback entre modelos `agy`.
+
+Remediación aplicada:
+
+```text
+Flash Medium -> Flash High -> Gemini 3.1 Pro High
+Pro High indisponible -> GPT-5.5 high sólo para C1/A0/fondos
+otros gates -> bloqueados; nunca degradar a Low
+```
+
+El gate documental queda aprobado después de verificar esta remediación y
+`git diff --check`.

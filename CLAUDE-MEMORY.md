@@ -10,8 +10,12 @@
 - Quiere planificación rigurosa antes de implementar.
 - Autoriza enviar este repositorio público a los modelos OpenCode indicados.
 - Prefiere distribución costo-beneficio:
-  MiniMax M3 para volumen, DeepSeek V4 Pro para ZK/Rust y Qwen 3.7 Max /
-  GLM-5.2 solo para auditoría.
+  OpenCode Go sólo para implementación pesada; `agy` para trabajo ligero y
+  auditoría; GPT-5.5 high para audit premium.
+- Codex planifica, escribe briefs, audita gates y no escribe código de
+  producción.
+- Qwen 3.7 Max y GLM-5.2 fueron retirados el 2026-06-30 por costo, no por
+  calidad.
 
 ## Proyecto y plazo
 
@@ -58,34 +62,37 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 - Auditoría histórica usa archivo content-addressed, no solo retención RPC.
 - TTL expresado en ledgers y acotado por política/red.
 
-## Estado recuperado 2026-06-30
+## Estado recuperado y actualizado 2026-06-30
 
 - `main` termina en `53a7612`; contiene plan, foundation y ledger operativo.
 - Toolchain fijado: Node 24, Rust/Cargo 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y target `wasm32v1-none`.
-- `agent/crypto` termina en `9b96da1`; Qwen encontró 0 Critical, 3 High.
-  Los scripts witness siguen sin trackear y la remediación no comenzó.
+- `agent/crypto` termina en `3c0755e`; el orchestrator limpio pasa 14 witness,
+  16 Rust, Python BigInt, clippy y wasm32v1-none. Queda re-audit vigente.
 - `agent/product` termina en `37c7ad4`; conserva una remediación M3 útil pero
   sin commit. Sus cinco paquetes habían llegado a 188 tests verdes antes de
   que el integrador detectara inconsistencias adicionales.
-- `agent/contract` sigue en el commit base y conserva implementación sin
-  commit. Qwen encontró 3 Critical y 5 High; no es integrable.
+- `agent/contract` sigue sin commit. Tiene verifier positivo y
+  `contractimport!`, pero no es integrable hasta cerrar parsing Fr canónico,
+  validación de roots/scope y arithmetic checked.
 - Ninguna lane fue mergeada a `main`; setup, proofs reales, integración,
   testnet, carga y evidencia final siguen pendientes.
-- OpenCode confirmó `5-hour usage limit reached` para M3 y DeepSeek el
-  2026-06-29. Las tres sesiones frescas fallaron con 0 tokens y 0 cambios.
+- OpenCode confirmó `5-hour usage limit reached` el 2026-06-29. Intentos
+  posteriores con IDs `opencode/...` pertenecían al provider equivocado. El
+  router vigente exige `opencode-go/...`.
 - `spike/package.json`, su lockfile y otros untracked ajenos deben preservarse.
 
 ## Siguiente gate
 
-Relanzar después del reset de cuota, con sesiones frescas y worktrees
-existentes:
+Continuar con worktrees existentes y routing vigente:
 
-1. DeepSeek V4 Pro cierra C0 en `agent/crypto`;
-2. DeepSeek V4 Pro cierra C1 en `agent/contract`;
-3. MiniMax M3 cierra U0 en `agent/product`;
-4. Qwen 3.7 Max re-audita cada commit read-only;
-5. el integrador repite los tests y sólo entonces hace cherry-pick.
+1. Gemini 3.1 Pro High re-audita C0 `3c0755e`; GPT-5.5 high revisa sólo si
+   aparece un hallazgo crítico o al cerrar A0;
+2. DeepSeek V4 Pro o Kimi K2.7 Code por OpenCode Go cierra C1;
+3. MiniMax M3 por OpenCode Go cierra U0; M2.7 sólo absorbe tests mecánicos;
+4. `agy` High audita cada commit final read-only;
+5. GPT-5.5 high audita C1/A0;
+6. Codex repite evidencia, decide el gate y sólo entonces integra.
 
 Detalles y acceptance tests:
 `docs/plan/OPEN-CODE-EXECUTION-LOG.md`.

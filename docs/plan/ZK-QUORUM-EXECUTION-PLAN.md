@@ -823,41 +823,59 @@ La auditoría histórica no dependerá exclusivamente de la retención de un RPC
 
 ## 11. Sistema multiagente
 
-### 11.1 Modelos disponibles y routing
+### 11.1 Herramientas, modelos y routing vigente
 
-IDs confirmados por `opencode models`:
+Cambio autorizado el 2026-06-30: Qwen 3.7 Max y GLM-5.2 quedan retirados por
+costo operacional observado, no por calidad. Todos los implementadores
+OpenCode usan exclusivamente el provider `opencode-go`; no se usa OpenCode
+Zen.
+
+IDs confirmados por `opencode models opencode-go`:
 
 ```text
-opencode-go/minimax-m3
 opencode-go/deepseek-v4-pro
-opencode-go/qwen3.7-max
-opencode-go/glm-5.2
+opencode-go/kimi-k2.7-code
+opencode-go/minimax-m3
+opencode-go/minimax-m2.7
 ```
 
-Distribución objetivo:
+Modelos confirmados por `agy models`:
 
-| Modelo | Uso | Participación aproximada |
-|---|---|---:|
-| MiniMax M3 | scaffolding, web, relayer, scripts, CI, docs, tests mecánicos | 60–70% |
-| DeepSeek V4 Pro | circuitos, Rust/Soroban, integración ZK, debug profundo | 20–30% |
-| Qwen 3.7 Max | auditoría independiente de soundness/security | ≤5% |
-| GLM-5.2 | auditoría independiente de arquitectura/integración/release | ≤5% |
+```text
+Gemini 3.1 Pro (High)
+Gemini 3.5 Flash (Medium)
+Gemini 3.5 Flash (High)
+```
 
-Estos porcentajes son una política de routing observada por task ownership, no una cuota que OpenCode aplique automáticamente. No se usa premium para implementación rutinaria.
+GPT-5.5 con reasoning `high` fue validado mediante Codex CLI en modo efímero y
+read-only. Las variantes Low de Antigravity están prohibidas.
 
-### 11.2 Topología: tres lanes y dos auditores
+| Herramienta/modelo | Uso | Política económica |
+|---|---|---|
+| Codex, esta sesión | plan, briefs, revisión y decisión de gate | no escribe código de producción |
+| DeepSeek V4 Pro | circuitos, Rust/Soroban, integración ZK y debug fino | OpenCode escaso; reservar para implementación pesada |
+| Kimi K2.7 Code | implementación multiarchivo y fallback complejo | OpenCode escaso; usar con acceptance cerrado |
+| MiniMax M3 | producto, relayer, web, scripts y CI | driver principal de producto |
+| MiniMax M2.7 | tests, fixtures, codemods y overflow | trabajo mecánico acotado |
+| Gemini 3.5 Flash Medium/High | worker ligero y auditoría amplia | descargar trabajo no crítico desde OpenCode |
+| Gemini 3.1 Pro High | auditoría security/soundness y arquitectura | auditor independiente |
+| GPT-5.5 high | audit premium C1/A0 y cualquier hito con fondos | sólo sobre commits estabilizados |
+
+### 11.2 Topología: tres lanes y auditoría independiente
 
 No se crearán diez worktrees. La coordinación se mantiene acotada:
 
 ```text
 main/integration
-├── wt/crypto       DeepSeek V4 Pro
-├── wt/contract     DeepSeek V4 Pro
-└── wt/product      MiniMax M3
+├── wt/crypto       DeepSeek V4 Pro → Kimi K2.7 Code
+├── wt/contract     DeepSeek V4 Pro → Kimi K2.7 Code
+└── wt/product      MiniMax M3 → Kimi K2.7 Code / MiniMax M2.7
 
 auditorías read-only:
-├── Qwen 3.7 Max
-└── GLM-5.2
+├── Codex: revisión continua y gate
+├── Gemini 3.5 Flash High: producto/release
+├── Gemini 3.1 Pro High: security/soundness
+└── GPT-5.5 high: C1/A0 premium
 ```
 
 ### 11.3 Ownership
@@ -897,6 +915,10 @@ Integrador:
 - este plan y su §22 de decisiones;
 - merges/cherry-picks.
 
+Codex puede inspeccionar y coordinar esos archivos, ejecutar verificaciones y
+realizar integración mecánica de commits auditados. Cualquier cambio de código
+de producción dentro de ellos se delega a un implementador.
+
 ### 11.4 Contrato de salida de cada agente
 
 Cada sesión termina con:
@@ -920,15 +942,22 @@ No se acepta “done” sin tests o evidencia explícita de por qué no aplican.
 ### 11.5 Reglas de escalamiento
 
 - M3 encuentra un problema ZK/Rust no mecánico: escala inmediatamente a V4 Pro.
-- M3 falla dos veces en el mismo test: no reintenta; entrega diagnóstico.
-- V4 Pro falla dos ciclos con la misma causa: GLM-5.2 audita el diagnóstico.
-- Qwen/GLM no editan código; producen hallazgos.
+- M3 falla una vez por comprensión multiarchivo: entrega diagnóstico y escala a Kimi K2.7 Code.
+- V4 Pro no está disponible por cuota/billing: Kimi K2.7 Code toma el brief exacto; no se deja una sesión esperando.
+- M2.7 falla una vez por contexto: escala a M3.
+- `agy` Medium hace trabajo ligero; sólo High participa en un gate.
+- Fallback `agy`: Flash Medium → Flash High → Gemini 3.1 Pro High. Si Pro High
+  no está disponible, C1/A0/fondos escalan a GPT-5.5 high; otros gates se
+  bloquean y no degradan a Low.
+- Un auditor no corrige el mismo diff que audita.
+- Codex escribe planes/briefs y decide gates, pero no código de producción.
+- Qwen 3.7 Max y GLM-5.2 no se invocan.
 - Hallazgo Critical/High bloquea merge/release.
 - Divergencia entre auditores se resuelve con reproducción, no por votación.
 
-### 11.6 Comandos base OpenCode
+### 11.6 Comandos base
 
-Implementación:
+Implementación OpenCode Go:
 
 ```bash
 opencode run \
@@ -948,28 +977,54 @@ opencode run \
   "Lee docs/plan/ZK-QUORUM-EXECUTION-PLAN.md y ejecuta solo TASK_ID..."
 ```
 
-Auditoría:
+Fallback de implementación compleja:
 
 ```bash
 opencode run \
-  --agent plan \
-  --model opencode-go/qwen3.7-max \
-  --title zkq-security-audit \
-  "Auditoría estrictamente read-only..."
+  --agent build \
+  --model opencode-go/kimi-k2.7-code \
+  --title zkq-integration-TASK_ID \
+  "Lee el brief congelado y ejecuta sólo TASK_ID..."
 ```
 
+Worker ligero:
+
 ```bash
-opencode run \
-  --agent plan \
-  --model opencode-go/glm-5.2 \
-  --title zkq-release-audit \
-  "Auditoría estrictamente read-only..."
+agy --prompt "Ejecuta sólo el task ligero indicado..." \
+  --model 'Gemini 3.5 Flash (Medium)' \
+  --sandbox \
+  --print-timeout 5m
+```
+
+Auditoría security/soundness:
+
+```bash
+agy --prompt "Auditoría estrictamente read-only del commit exacto..." \
+  --model 'Gemini 3.1 Pro (High)' \
+  --print-timeout 10m
+```
+
+El audit usa paths absolutos y Codex verifica el diff antes/después. El
+`--sandbox` de la versión instalada queda suspendido para auditoría de repo
+porque ejecutó Git desde un scratch incorrecto y terminó en panic; ver ledger
+§18.8. Se reactiva cuando una sonda reproduzca correctamente el cwd.
+
+Auditoría premium:
+
+```bash
+codex --ask-for-approval never exec \
+  --ephemeral \
+  --sandbox read-only \
+  --model gpt-5.5 \
+  -c 'model_reasoning_effort="high"' \
+  "Auditoría estrictamente read-only del commit exacto..."
 ```
 
 Nunca usar:
 
 ```text
 --dangerously-skip-permissions
+--dangerously-bypass-approvals-and-sandbox
 ```
 
 ---
@@ -978,7 +1033,8 @@ Nunca usar:
 
 ### Gate P0 — Plan congelado
 
-- Este documento auditado por Qwen y GLM.
+- Este documento conserva las auditorías históricas Qwen/GLM del 2026-06-29.
+- El cambio de routing del 2026-06-30 se verifica con Codex + `agy`.
 - Hallazgos clasificados y registrados.
 - Fecha autoritativa e internal freeze registrados; la hora externa se verifica antes de S0 sin retrasar F0.
 
@@ -1123,7 +1179,7 @@ El paso siguiente solo corre si el anterior es consistente.
 
 ### Gate A0 — Auditoría final
 
-Qwen:
+Gemini 3.1 Pro High:
 
 - soundness;
 - replay;
@@ -1133,7 +1189,7 @@ Qwen:
 - event/audit completeness;
 - R1.
 
-GLM:
+Gemini 3.5 Flash High:
 
 - build limpio;
 - integración;
@@ -1141,6 +1197,16 @@ GLM:
 - load methodology;
 - docs/claims;
 - release/submission.
+
+GPT-5.5 high:
+
+- verifier y parsing canónico;
+- orden verify-before-mutate;
+- invariantes de contrato y overflow;
+- coherencia de remediaciones Critical/High;
+- audit premium final A0.
+
+Codex reconcilia evidencia y decide el gate; no corrige código de producción.
 
 ### Gate S0 — Submission
 
@@ -1180,7 +1246,7 @@ La hora exacta del cierre del 2 de julio todavía debe registrarse. Se trabajar�
 - cerrar R1;
 - cerrar U0;
 - ejecutar carga escalonada hasta 500;
-- auditorías Qwen/GLM;
+- auditorías `agy` High y GPT-5.5 high;
 - remediación.
 
 ### 2 de julio — evidencia y entrega
@@ -1199,7 +1265,7 @@ Si el cierre es temprano el 2 de julio, las tareas de entrega se adelantan al 1 
 
 | ID | Task | Owner | Depende | Acceptance principal |
 |---|---|---|---|---|
-| P0.1 | Auditar plan | Qwen + GLM | — | hallazgos clasificados |
+| P0.1 | Auditar plan | histórico Qwen/GLM; vigente Codex + agy | — | hallazgos clasificados |
 | P1.1 | Remediar/congelar plan | Integrador | P0.1 | sin Critical/High abiertos |
 | F0.1 | Workspace/attribution | M3 + integrador | P1 | clone limpio |
 | F0.2 | Toolchain/bootstrap | M3 | F0.1 | versiones verificadas |
@@ -1217,8 +1283,9 @@ Si el cierre es temprano el 2 de julio, las tareas de entrega se adelantan al 1 
 | U0.1 | Relayer | M3 | E0.2/K0 | preverify/simulate/submit |
 | U0.2 | Web admin/voter/audit | M3 + V4 integración prover | E0/T0/U-Pre | browser flow |
 | L0.1 | Load harness | M3 | T0/L-Pre | 1→500 metrics |
-| A0.1 | Security audit | Qwen | R1/U0/L0 | findings |
-| A0.2 | Release audit | GLM | R1/U0/L0 | findings |
+| A0.1 | Security/soundness audit | Gemini 3.1 Pro High | R1/U0/L0 | findings |
+| A0.2 | Product/release audit | Gemini 3.5 Flash High | R1/U0/L0 | findings |
+| A0.3 | Premium verifier/final audit | GPT-5.5 high | A0.1/A0.2 | cero Critical/High |
 | S0.1 | Docs/evidence/video | M3 + integrador | A0 | submission ready |
 
 ---
@@ -1419,8 +1486,11 @@ No se extrapola “500” desde 50 sin etiquetarlo como extrapolación.
 - `docs/architecture/privacy.md`;
 - `docs/evidence/testnet.md`;
 - `docs/evidence/load.md`;
-- `docs/audit/QWEN-AUDIT.md`;
-- `docs/audit/GLM-AUDIT.md`;
+- `docs/audit/QWEN-AUDIT.md` y `docs/audit/GLM-AUDIT.md` como evidencia
+  histórica del plan/commits que examinaron;
+- `docs/audit/AGY-SECURITY-AUDIT.md`;
+- `docs/audit/AGY-RELEASE-AUDIT.md`;
+- `docs/audit/GPT55-PREMIUM-AUDIT.md`;
 - `docs/audit/REMEDIATION.md`;
 - §22 de este documento como registro de decisiones durante el sprint;
 - `SUBMISSION.md`.
@@ -1453,12 +1523,18 @@ El proyecto está terminado cuando:
 8. TTL y archivo están documentados y probados proporcionalmente.
 9. Frontend prueba localmente y usa relayer.
 10. La carga de 500 tiene evidencia o el claim se retira.
-11. Qwen y GLM no tienen Critical/High abiertos.
+11. Gemini 3.1 Pro High, Gemini 3.5 Flash High y GPT-5.5 high no tienen
+    Critical/High abiertos sobre los commits finales.
 12. README/video/submission solo contienen hechos demostrados.
 
 ---
 
-## 21. Disposición de auditorías del plan
+## 21. Disposición histórica de auditorías del plan
+
+Las secciones 21.1 y 21.2 registran evidencia producida el 2026-06-29. Qwen
+3.7 Max y GLM-5.2 fueron retirados del routing el 2026-06-30 por costo; sus
+hallazgos siguen siendo válidos para el plan que auditaron, pero no se les
+asignan nuevas tareas.
 
 ### 21.1 Qwen 3.7 Max — security/soundness
 
@@ -1505,12 +1581,13 @@ El proyecto está terminado cuando:
 
 ### 21.3 Estado de P1
 
-Tras aplicar las correcciones anteriores:
+Estado registrado al cerrar la auditoría histórica del plan:
 
 - Critical/High de soundness: remediados en especificación.
 - Critical de deadline: resuelto por instrucción explícita del usuario.
 - Critical de versionado: pendiente de commit intencional, no de cambio técnico.
-- Implementación aún no iniciada.
+- En ese momento la implementación aún no se había iniciado; el estado vigente
+  está en `docs/plan/OPEN-CODE-EXECUTION-LOG.md`.
 
 ---
 
@@ -1520,7 +1597,7 @@ Tras aplicar las correcciones anteriores:
 |---|---|---|---|
 | D-001 | Deadline operativo 2026-07-02; freeze 2026-07-01 20:00 CLT | Instrucción del usuario + buffer | usuario/integrador |
 | D-002 | BLS12-381/Groth16/privacy-pools como referencia | spike probado | auditoría + nuevo spike |
-| D-003 | Circuitos de ballot nuevos; no rename semántico de Withdraw | statement diferente | Qwen/GLM + re-setup |
+| D-003 | Circuitos de ballot nuevos; no rename semántico de Withdraw | statement diferente | Gemini 3.1 Pro High + GPT-5.5 high + re-setup |
 | D-004 | Nullifier `P2(secret, electionScope)` | unlinkability y anti-replay | auditoría de soundness |
 | D-005 | Scope SHA-256 con rejection sampling | encoding canónico sin reducción silenciosa | golden vectors + auditoría |
 | D-006 | ASP obligatorio y sin zero bypass | elegibilidad load-bearing | auditoría |
@@ -1529,7 +1606,8 @@ Tras aplicar las correcciones anteriores:
 | D-009 | 16 tally buckets | reducir contention con result acotado | benchmark + auditoría |
 | D-010 | Proofs fuera de storage, hashes en eventos y archivo content-addressed | costo + auditoría histórica | arquitectura/auditoría |
 | D-011 | Tres implementation lanes | minimizar coordinación | integrador |
-| D-012 | Qwen/GLM solo read-only audit | costo-beneficio e independencia | usuario |
+| D-012 | Auditores externos operan read-only y no corrigen su propio diff | independencia del gate | usuario |
+| D-013 | Qwen 3.7 Max y GLM-5.2 retirados; OpenCode Go sólo implementa; `agy` + GPT-5.5 high auditan | costo operacional observado | usuario |
 
 ---
 
@@ -1598,21 +1676,26 @@ stellar command not found
 opencode 1.17.11
 ```
 
-### A.4 OpenCode
+### A.4 OpenCode Go, Antigravity y GPT-5.5
 
 ```bash
-opencode models
+opencode models opencode-go
 opencode agent list
 opencode stats
+agy models
 ```
 
 Modelos usados por este plan:
 
 ```text
 opencode-go/minimax-m3
+opencode-go/minimax-m2.7
 opencode-go/deepseek-v4-pro
-opencode-go/qwen3.7-max
-opencode-go/glm-5.2
+opencode-go/kimi-k2.7-code
+Gemini 3.5 Flash (Medium)
+Gemini 3.5 Flash (High)
+Gemini 3.1 Pro (High)
+gpt-5.5 / reasoning high
 ```
 
 Agentes primarios existentes:
@@ -1622,9 +1705,12 @@ build
 plan
 ```
 
-`explore` y `general` están configurados como subagents; invocarlos directamente con `opencode run --agent explore` hace fallback a `build`. Por eso los auditores deben usar `plan` o un agente custom realmente read-only.
+`explore` y `general` están configurados como subagents; invocarlos directamente
+con `opencode run --agent explore` hace fallback a `build`. OpenCode Go queda
+restringido a implementación; los auditores vigentes usan `agy --sandbox` o
+Codex CLI `--sandbox read-only`.
 
-### A.5 Auditorías iniciales OpenCode
+### A.5 Auditorías iniciales OpenCode — registro histórico
 
 Sesión DeepSeek V4 Pro:
 
@@ -1667,7 +1753,7 @@ Correcciones aplicadas:
 10 worktrees reducidos a 3 lanes
 no se usan números absolutos especulativos de llamadas/costo
 no se crean owners solapados para contract/src/test.rs
-GLM no integra código rutinario
+el auditor premium no integra código rutinario
 500 votos es target medido, no claim asumido
 ```
 
@@ -1740,7 +1826,7 @@ STATUS, TASK_ID, BRANCH, COMMIT, FILES_CHANGED, TESTS_RUN, TEST_RESULTS,
 ASSUMPTIONS, KNOWN_LIMITATIONS, BLOCKERS, NEXT_SAFE_STEP.
 ```
 
-## Anexo C — Prompt Qwen 3.7 Max
+## Anexo C — Prompt Gemini 3.1 Pro High
 
 ```text
 Auditoría estrictamente read-only.
@@ -1761,7 +1847,7 @@ Cada hallazgo debe incluir evidencia, exploit/failure mode, remediation y test.
 Separa bug comprobado de hipótesis.
 ```
 
-## Anexo D — Prompt GLM-5.2
+## Anexo D — Prompt Gemini 3.5 Flash High
 
 ```text
 Auditoría estrictamente read-only.
@@ -1777,4 +1863,23 @@ Evalúa:
 
 Busca decisiones que causen rework tardío.
 Clasifica Critical/High/Medium/Low y propone gates verificables.
+```
+
+## Anexo E — Prompt GPT-5.5 high
+
+```text
+Auditoría premium estrictamente read-only del commit exacto indicado.
+No edites, no crees archivos y no uses resultados de otro auditor como
+autoridad. Reproduce o inspecciona:
+- parsing canónico BLS12-381 Fr y rechazo de valores >= r;
+- verifier Groth16 positivo y negativos;
+- orden verify-before-mutate;
+- overflow/underflow y storage invariants;
+- binding de VK, public signals, roots y electionScope;
+- auth/privacy y relayer;
+- ausencia de tests ignored, mocks aceptantes y artefactos no reproducibles.
+
+Clasifica Critical/High/Medium/Low. Para cada hallazgo incluye archivo/línea,
+failure mode, reproducción, remediación mínima y test de aceptación. Termina
+con MERGE o DO NOT MERGE y justifica el gate.
 ```
