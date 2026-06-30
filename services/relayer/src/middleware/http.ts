@@ -8,6 +8,8 @@ export interface HttpRequestLike {
   on(event: "data", cb: (chunk: Buffer) => void): void;
   on(event: "end", cb: () => void): void;
   on(event: "error", cb: (err: Error) => void): void;
+  pause?: () => void;
+  resume?: () => void;
 }
 
 export interface HttpResponseLike {
@@ -37,12 +39,28 @@ export function readBody(req: HttpRequestLike, limit: number): Promise<ParsedHtt
     const chunks: Buffer[] = [];
     let total = 0;
     let aborted = false;
+
+    // Frozen U0: on overflow, drop the partial buffer, RESUME the
+    // stream so the rest of the request is drained, and resolve. We
+    // MUST NOT destroy the socket here: the response is going to
+    // arrive on the same connection and the caller must be able to
+    // observe it. The route handler is responsible for setting
+    // `Connection: close` and writing the 413 before the server closes
+    // the socket after the response.
+    const abort = (reason: string): void => {
+      if (aborted) return;
+      aborted = true;
+      try { req.pause?.(); } catch { /* noop */ }
+      try { req.resume?.(); } catch { /* noop */ }
+      chunks.length = 0;
+      resolve({ ok: false, body: Buffer.alloc(0), reason });
+    };
+
     req.on("data", (chunk) => {
       if (aborted) return;
       total += chunk.length;
       if (total > limit) {
-        aborted = true;
-        resolve({ ok: false, body: Buffer.alloc(0), reason: "body exceeded limit" });
+        abort("body exceeded limit");
         return;
       }
       chunks.push(chunk);
@@ -52,9 +70,7 @@ export function readBody(req: HttpRequestLike, limit: number): Promise<ParsedHtt
       resolve({ ok: true, body: Buffer.concat(chunks) });
     });
     req.on("error", (err) => {
-      if (aborted) return;
-      aborted = true;
-      resolve({ ok: false, body: Buffer.alloc(0), reason: err.message });
+      abort(err.message);
     });
   });
 }

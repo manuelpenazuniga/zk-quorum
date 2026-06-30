@@ -19,7 +19,9 @@ export const DEFAULT_REDACTION_RULES: ReadonlyArray<RedactionRule> = [
   { key: /passphrase/i, replace: () => REDACTED },
   { key: /authorization/i, replace: () => REDACTED },
   { key: /bearer/i, replace: () => REDACTED },
-  { key: /ip/i, replace: () => REDACTED },
+  { key: /(^|[_-])ip($|[_-])/i, replace: () => REDACTED },
+  { key: /remote[-_]?addr/i, replace: () => REDACTED },
+  { key: /x-forwarded-for/i, replace: () => REDACTED },
   { key: /user[-_]agent/i, replace: () => REDACTED },
 ];
 

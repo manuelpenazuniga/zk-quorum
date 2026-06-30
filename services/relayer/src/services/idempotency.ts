@@ -49,12 +49,30 @@ export function createInMemoryIdempotencyStore(options: InMemoryIdempotencyOptio
     complete(key, result, t) {
       entries.set(key, { inFlight: false, result, expiresAt: t + options.ttlMs });
     },
-    fail(key, t) {
-      const e = entries.get(key);
-      if (e !== undefined) entries.set(key, { inFlight: false, result: e.result, expiresAt: t + options.ttlMs });
+    fail(key, _t) {
+      // audit H3: fail() deletes the entry so the caller can retry.
+      entries.delete(key);
     },
     size() {
       return entries.size;
     },
   };
+}
+
+/**
+ * Audit L1: generate an idempotency key with `crypto.randomUUID` and fall back
+ * to `getRandomValues` if `randomUUID` is unavailable. The output is a
+ * 32-byte hex token suitable for use as an `idempotencyKey` directly.
+ */
+export function generateIdempotencyKey(): `0x${string}` {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function") {
+    return ("0x" + c.randomUUID().replace(/-/g, "").padEnd(32, "0")) as `0x${string}`;
+  }
+  if (c && typeof c.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    c.getRandomValues(bytes);
+    return ("0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")) as `0x${string}`;
+  }
+  throw new Error("no CSPRNG available");
 }

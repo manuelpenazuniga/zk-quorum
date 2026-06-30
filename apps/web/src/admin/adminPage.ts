@@ -51,7 +51,8 @@ export function createAdminPage(): AdminPageHandle {
 
   const update = () => {
     status.textContent = state.message;
-    submit.setAttribute("disabled", state.status === "submitting" ? "true" : "false");
+    // Audit C2: IDL `disabled` property, not a string-typed attribute.
+    submit.disabled = state.status === "submitting";
   };
   update();
 

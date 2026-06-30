@@ -5,7 +5,8 @@ import { createTokenBucketRateLimiter, type RateLimiter } from "./services/rateL
 import { createInMemoryIdempotencyStore, type IdempotencyStore } from "./services/idempotency.js";
 import { createPerAccountRelayQueue, type RelayQueue } from "./services/relayQueue.js";
 import { createRedactingLogger, type RedactingLogger } from "./services/logRedaction.js";
-import { MockOffchainVerifier, MockSimulator, MockSubmitter } from "./adapters/mockAdapters.js";
+import { createEphemeralClientKeyer, type EphemeralKeyer } from "./services/ephemeralClientKey.js";
+import { Groth16SnarkjsVerifier, StellarSubmitter, SorobanSimulator } from "./adapters/snarkjsAdapter.js";
 import type { OffchainVerifier, Simulator, Submitter } from "./adapters/types.js";
 import { createHealthRoute } from "./routes/health.js";
 import { createSubmitRoute } from "./routes/submit.js";
@@ -19,19 +20,32 @@ export interface RelayerDeps {
   readonly idempotency: IdempotencyStore;
   readonly queue: RelayQueue<unknown>;
   readonly logger: RedactingLogger;
+  readonly clientKeyer: EphemeralKeyer;
 }
 
+/**
+ * Production factory: FAIL CLOSED (audit integrator finding).
+ * Without explicit non-mock adapters, the relayer refuses to start. Mocks
+ * exist in `adapters/mockAdapters.ts` and the separate `testDeps.ts`
+ * factory; they are NEVER imported by this file. The relayer must never
+ * reach `listen()` while a `Groth16SnarkjsVerifier` / `SorobanSimulator`
+ * / `StellarSubmitter` (all unconfigured) is in scope: `index.ts` does
+ * the `instanceof` check and aborts before binding the port.
+ */
 export function createDefaultDeps(config: RelayerConfig = loadRelayerConfig()): RelayerDeps {
-  const submitter = new MockSubmitter({ account: config.submitterAccount });
+  const verifier = new Groth16SnarkjsVerifier();
+  const simulator = new SorobanSimulator();
+  const submitter = new StellarSubmitter();
   return {
     config,
-    verifier: new MockOffchainVerifier(),
-    simulator: new MockSimulator(),
+    verifier,
+    simulator,
     submitter,
     rateLimiter: createTokenBucketRateLimiter({ limit: config.ratePerMinute, windowMs: config.rateWindowMs }),
     idempotency: createInMemoryIdempotencyStore({ ttlMs: config.idempotencyTtlMs }),
     queue: createPerAccountRelayQueue<unknown>({ concurrency: config.queueConcurrency }),
     logger: createRedactingLogger({ enabled: config.enableLogging }),
+    clientKeyer: createEphemeralClientKeyer({ rotationMs: config.clientKeyRotationMs }),
   };
 }
 
@@ -49,14 +63,16 @@ export function createRelayerApp(deps: RelayerDeps): RelayerApp {
     queue: deps.queue,
     idempotency: deps.idempotency,
     rateLimiter: deps.rateLimiter,
+    clientKeyer: deps.clientKeyer,
     logger: deps.logger,
     bodyLimitBytes: deps.config.bodyLimitBytes,
+    maxProofBytes: deps.config.maxProofBytes,
   });
 
   return {
     async handle(req: IncomingMessage, res: ServerResponse) {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? deps.config.host}`);
-      const fallbackIp = (req.socket?.remoteAddress ?? "0.0.0.0").replace(/[^0-9a-fA-F:.]/g, "");
+      const rawAddress = (req.socket?.remoteAddress ?? "0.0.0.0").replace(/[^0-9a-fA-F:.]/g, "");
       const httpReq = req as unknown as Parameters<typeof health>[0];
       try {
         if (url.pathname === "/health" || url.pathname === "/healthz") {
@@ -64,7 +80,7 @@ export function createRelayerApp(deps: RelayerDeps): RelayerApp {
           return;
         }
         if (url.pathname === "/submit") {
-          await submit(httpReq, res, fallbackIp);
+          await submit(httpReq, res, rawAddress);
           return;
         }
         res.statusCode = 404;

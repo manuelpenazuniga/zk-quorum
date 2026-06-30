@@ -8,11 +8,27 @@ export interface ElectionScopeInput {
   readonly networkPassphrase: string;
   readonly contractId: Bytes32Hex;
   readonly electionId: Bytes32Hex;
-  readonly version: number;
 }
 
-export const BLS12_381_SCALAR_MODULUS = (1n << 255n) - 19n;
-export const SCOPE_REJECTION_MAX_COUNTER = 256;
+export const BLS12_381_FR_MODULUS_HEX = "0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
+export const BLS12_381_FR_MODULUS = (() => {
+  const hex = BLS12_381_FR_MODULUS_HEX.slice(2);
+  if (hex.length !== 64) throw new Error("BLS12_381 Fr modulus literal must be 32 bytes");
+  let v = 0n;
+  for (let i = 0; i < hex.length; i += 1) {
+    v = (v << 4n) | BigInt(parseInt(hex[i]!, 16));
+  }
+  return v;
+})();
+export const BLS12_381_FR_MODULUS_DECIMAL: bigint = 52435875175126190479447740508185965837690552500527637822603658699938581184513n;
+
+/**
+ * Plan §5.1: counter runs `0..=255` (inclusive), exactly 256 attempts.
+ * 257+ attempts are not part of the frozen algorithm and are rejected.
+ */
+export const SCOPE_REJECTION_COUNTER_MIN: 0 = 0;
+export const SCOPE_REJECTION_COUNTER_MAX: 255 = 255;
+export const SCOPE_REJECTION_COUNTER_LIMIT = SCOPE_REJECTION_COUNTER_MAX + 1;
 
 const TEXT_ENCODER = new TextEncoder();
 
@@ -67,9 +83,6 @@ export function canonicalScopeMessage(input: ElectionScopeInput, domainTag: stri
   if (!isHex32(input.electionId)) {
     throw new ZkqProtocolError("INVALID_HEX", "electionId must be 32-byte hex", { electionId: input.electionId });
   }
-  if (!Number.isInteger(input.version) || input.version < 0 || input.version > 0xff) {
-    throw new ZkqProtocolError("INVALID_FIELD_ELEMENT", "version must fit in u8", { version: input.version });
-  }
   const tag = TEXT_ENCODER.encode(domainTag);
   const net = TEXT_ENCODER.encode(input.networkPassphrase);
   const contractBytes = hexToBytes(input.contractId);
@@ -77,13 +90,19 @@ export function canonicalScopeMessage(input: ElectionScopeInput, domainTag: stri
   assertByteLength(contractBytes, 32, "contractId");
   assertByteLength(electionBytes, 32, "electionId");
 
+  // plan §5.1: NO version byte. Tag || networkPassphrase || contractId || electionId.
   return concatBytes([
     u32Be(tag.length), tag,
     u32Be(net.length), net,
     u32Be(contractBytes.length), contractBytes,
     u32Be(electionBytes.length), electionBytes,
-    u8(input.version),
   ]);
+}
+
+function assertMaxCounter(maxCounter: number): void {
+  if (!Number.isInteger(maxCounter) || maxCounter < SCOPE_REJECTION_COUNTER_MIN || maxCounter > SCOPE_REJECTION_COUNTER_MAX) {
+    throw new ZkqProtocolError("INVALID_FIELD_ELEMENT", `maxCounter must be in [${SCOPE_REJECTION_COUNTER_MIN}, ${SCOPE_REJECTION_COUNTER_MAX}]`, { maxCounter });
+  }
 }
 
 export async function deriveElectionScope(
@@ -91,12 +110,13 @@ export async function deriveElectionScope(
   options: ScopeDerivationOptions = {},
 ): Promise<Bytes32Hex> {
   const domainTag = options.domainTag ?? ZKQ_ELECTION_SCOPE_DOMAIN_TAG;
-  const maxCounter = options.maxCounter ?? SCOPE_REJECTION_MAX_COUNTER;
+  const maxCounter = options.maxCounter ?? SCOPE_REJECTION_COUNTER_MAX;
+  assertMaxCounter(maxCounter);
   const digest = options.digest ?? sha256;
   const message = canonicalScopeMessage(input, domainTag);
-  const mod = BLS12_381_SCALAR_MODULUS;
+  const mod = BLS12_381_FR_MODULUS;
 
-  for (let counter = 0; counter <= maxCounter; counter += 1) {
+  for (let counter = SCOPE_REJECTION_COUNTER_MIN; counter <= maxCounter; counter += 1) {
     const buf = concatBytes([message, u8(counter)]);
     const out = await digest(buf);
     assertByteLength(out, 32, "sha256 output");

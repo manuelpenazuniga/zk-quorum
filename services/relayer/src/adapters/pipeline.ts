@@ -1,7 +1,6 @@
-import type { CastResponse, CommitProofEnvelope, ProofEnvelope, RevealResponse, Sha256Hex } from "@zk-quorum/protocol";
+import type { CastResponse, CommitProofEnvelope, ProofEnvelope, RevealResponse } from "@zk-quorum/protocol";
 import { isHex, parsePublicSignals, PUBLIC_SCHEMAS, ZkqProtocolError } from "@zk-quorum/protocol";
 import type { OffchainVerifier, Simulator, Submitter } from "./types.js";
-import { hashEnvelope } from "./mockAdapters.js";
 
 export interface CastExecutionInput {
   readonly envelope: ProofEnvelope;
@@ -39,23 +38,28 @@ export async function executeCast(input: CastExecutionInput): Promise<CastRespon
   }
   const verification = await verifier.verifyProof(envelope);
   if (!verification.ok) {
+    // Audit U0: a rejected cast returns null hashes, never a synthetic
+    // placeholder. The boolean `status` is the only signal of "proven".
     return {
       status: "rejected",
       txHash: null,
       nullifierHash: extractNullifier(envelope) as `0x${string}`,
-      proofHash: "0x" + "00".repeat(32) as Sha256Hex,
-      publicSignalsHash: "0x" + "00".repeat(32) as Sha256Hex,
+      proofHash: null,
+      publicSignalsHash: null,
       rejectReason: verification.reason,
     };
   }
+  // Audit U0: accepted / successfully-simulated casts propagate the
+  // verifier-returned hashes verbatim. The relay never locally
+  // re-derives a hash for an accepted cast.
   const sim = await simulator.simulateCast(envelope);
   if (!sim.ok) {
     return {
       status: "rejected",
       txHash: null,
       nullifierHash: extractNullifier(envelope) as `0x${string}`,
-      proofHash: verification.proofHash,
-      publicSignalsHash: verification.publicSignalsHash,
+      proofHash: null,
+      publicSignalsHash: null,
       rejectReason: sim.reason,
     };
   }
@@ -65,8 +69,8 @@ export async function executeCast(input: CastExecutionInput): Promise<CastRespon
       status: "rejected",
       txHash: submit.txHash ?? null,
       nullifierHash: extractNullifier(envelope) as `0x${string}`,
-      proofHash: verification.proofHash,
-      publicSignalsHash: verification.publicSignalsHash,
+      proofHash: null,
+      publicSignalsHash: null,
       rejectReason: submit.reason,
     };
   }
@@ -85,14 +89,16 @@ export async function executeReveal(input: RevealExecutionInput): Promise<Reveal
   if (!isHex(ballotCommitment as string) || !isHex(salt as string)) {
     throw new ZkqProtocolError("INVALID_HEX", "ballotCommitment and salt must be hex", { ballotCommitment, salt });
   }
+  // Frozen U0: a reveal response has no hash field. The relay attests
+  // only the (electionId, ballotCommitment) pair and the resulting tx
+  // hash. There is no payload hash, no proof hash, and no
+  // publicSignalsHash on the reveal wire.
   const sim = await simulator.simulateReveal({ electionId, ballotCommitment, vote, salt });
   if (!sim.ok) {
     return {
       status: "rejected",
       txHash: null,
       ballotCommitment: ballotCommitment as `0x${string}`,
-      proofHash: "0x" + "00".repeat(32) as Sha256Hex,
-      publicSignalsHash: "0x" + "00".repeat(32) as Sha256Hex,
       rejectReason: sim.reason,
     };
   }
@@ -102,23 +108,13 @@ export async function executeReveal(input: RevealExecutionInput): Promise<Reveal
       status: "rejected",
       txHash: submit.txHash ?? null,
       ballotCommitment: ballotCommitment as `0x${string}`,
-      proofHash: "0x" + "00".repeat(32) as Sha256Hex,
-      publicSignalsHash: "0x" + "00".repeat(32) as Sha256Hex,
       rejectReason: submit.reason,
     };
   }
-  const hashes = hashEnvelope({
-    electionId: electionId as `0x${string}`,
-    publicSchemaId: "PUBLIC_SCHEMA_V1_R1",
-    publicSignals: ["1", "1", "1", "1", "1", "1"],
-    proofBytes: "0x",
-  });
   return {
     status: "accepted",
     txHash: submit.txHash,
     ballotCommitment: ballotCommitment as `0x${string}`,
-    proofHash: hashes.proofHash,
-    publicSignalsHash: hashes.publicSignalsHash,
     rejectReason: null,
   };
 }

@@ -1,5 +1,4 @@
 import {
-  type CastRequest,
   type CommitProofEnvelope,
   isHex,
   isHex32,
@@ -7,11 +6,8 @@ import {
   parsePublicSignals,
   PUBLIC_SCHEMAS,
   type ProofEnvelope,
-  type RevealRequest,
   type Sha256Hex,
   ZkqProtocolError,
-  ZKQ_PUBLIC_SCHEMA_R0,
-  ZKQ_PUBLIC_SCHEMA_R1,
   bytesToHex,
   hexToBytes,
   isSha256Hex,
@@ -24,6 +20,9 @@ import {
   type Submitter,
   type VerifierResult,
 } from "./types.js";
+// Mock adapters import the production request validators so tests cover
+// the same wire-format rules. Mock fixtures that depend on relaxed rules
+// must override the validator at the test boundary, not here.
 
 function sha256Hex(bytes: Uint8Array): Sha256Hex {
   // Trivial non-cryptographic placeholder for the mock; the real one is in
@@ -144,6 +143,11 @@ export class MockSubmitter implements Submitter {
 export const PROOF_HASH_PLACEHOLDER: Sha256Hex = ("0x" + "00".repeat(32)) as Sha256Hex;
 export const PUBLIC_HASH_PLACEHOLDER: Sha256Hex = ("0x" + "11".repeat(32)) as Sha256Hex;
 
+// Re-export the production validators so existing tests that import them
+// from `mockAdapters` keep working. New code MUST import from
+// `services/requestValidation.ts` directly.
+export { validateCastRequestShape, validateRevealRequestShape } from "../services/requestValidation.js";
+
 export interface CastPipeline {
   readonly verifier: OffchainVerifier;
   readonly simulator: Simulator;
@@ -154,62 +158,6 @@ export interface CastPipelineDeps {
   readonly verifier: OffchainVerifier;
   readonly simulator: Simulator;
   readonly submitter: Submitter;
-}
-
-export function validateCastRequestShape(req: unknown): asserts req is CastRequest {
-  if (req === null || typeof req !== "object") {
-    throw new ZkqProtocolError("MISSING_PUBLIC_SIGNAL", "body must be an object");
-  }
-  const r = req as Record<string, unknown>;
-  if (typeof r.electionId !== "string" || !isHex32(r.electionId as string)) {
-    throw new ZkqProtocolError("MISSING_PUBLIC_SIGNAL", "electionId must be 32-byte hex");
-  }
-  if (typeof r.publicSchemaId !== "string") {
-    throw new ZkqProtocolError("INVALID_SCHEMA_VERSION", "publicSchemaId required");
-  }
-  if (r.publicSchemaId !== ZKQ_PUBLIC_SCHEMA_R0 && r.publicSchemaId !== ZKQ_PUBLIC_SCHEMA_R1) {
-    throw new ZkqProtocolError("INVALID_SCHEMA_VERSION", "publicSchemaId not supported");
-  }
-  if (!Array.isArray(r.publicSignals) || r.publicSignals.length === 0) {
-    throw new ZkqProtocolError("INVALID_SIGNAL_COUNT", "publicSignals must be a non-empty array");
-  }
-  if (typeof r.proofBytes !== "string" || !isHex(r.proofBytes)) {
-    throw new ZkqProtocolError("INVALID_HEX", "proofBytes must be 0x hex");
-  }
-  if (typeof r.idempotencyKey !== "string" || r.idempotencyKey.length < 8 || r.idempotencyKey.length > 128) {
-    throw new ZkqProtocolError("RELAYER_IDEMPOTENT_REPLAY", "idempotencyKey length must be in [8, 128]");
-  }
-  if (typeof r.clientTag !== "string" || r.clientTag.length < 1 || r.clientTag.length > 64) {
-    throw new ZkqProtocolError("MISSING_PUBLIC_SIGNAL", "clientTag length must be in [1, 64]");
-  }
-}
-
-export function validateRevealRequestShape(req: unknown): asserts req is RevealRequest {
-  if (req === null || typeof req !== "object") {
-    throw new ZkqProtocolError("MISSING_PUBLIC_SIGNAL", "body must be an object");
-  }
-  const r = req as Record<string, unknown>;
-  if (typeof r.electionId !== "string" || !isHex32(r.electionId)) {
-    throw new ZkqProtocolError("MISSING_PUBLIC_SIGNAL", "electionId must be 32-byte hex");
-  }
-  if (typeof r.ballotCommitment !== "string" || !isHex32(r.ballotCommitment)) {
-    throw new ZkqProtocolError("MISSING_PUBLIC_SIGNAL", "ballotCommitment must be 32-byte hex");
-  }
-  if (typeof r.nullifierHash !== "string" || !isHex32(r.nullifierHash)) {
-    throw new ZkqProtocolError("MISSING_PUBLIC_SIGNAL", "nullifierHash must be 32-byte hex");
-  }
-  if (typeof r.vote !== "number" || !Number.isInteger(r.vote) || r.vote < 0) {
-    throw new ZkqProtocolError("INVALID_VOTE_RANGE", "vote must be a non-negative integer");
-  }
-  if (typeof r.salt !== "string" || !isHex32(r.salt)) {
-    throw new ZkqProtocolError("R1_NON_ZERO_SALT", "salt must be 32-byte hex");
-  }
-  if (typeof r.idempotencyKey !== "string" || r.idempotencyKey.length < 8 || r.idempotencyKey.length > 128) {
-    throw new ZkqProtocolError("RELAYER_IDEMPOTENT_REPLAY", "idempotencyKey length must be in [8, 128]");
-  }
-  if (typeof r.clientTag !== "string" || r.clientTag.length < 1 || r.clientTag.length > 64) {
-    throw new ZkqProtocolError("MISSING_PUBLIC_SIGNAL", "clientTag length must be in [1, 64]");
-  }
 }
 
 export function isSha256HexOrThrow(value: string): Sha256Hex {

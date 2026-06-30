@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
-import { ZkqProtocolError } from "@zk-quorum/protocol";
-import { AUDIT_BUNDLE_SCHEMA, type AuditBundleV1, type ProofArchiveEntry } from "../domain/bundle.js";
+import { ZkqProtocolError, canonicalJson } from "@zk-quorum/protocol";
+import { type AuditBundleV1, type ProofArchiveEntry } from "../domain/bundle.js";
 import { parseBundleJson, validateBundle } from "../domain/loadBundle.js";
-import { auditR1, deduplicateEvents, reconstructTallies, summariseAudit } from "../domain/audit.js";
+import { auditR1, deduplicateEvents, reconstructTallies, summariseAudit, tallyToBundleFormat, type WithTx } from "../domain/audit.js";
 import type { VerifierAdapter } from "../adapters/verifierAdapter.js";
 import { NoopVerifierAdapter } from "../adapters/verifierAdapter.js";
 import type { AuditSummary } from "../domain/bundle.js";
@@ -15,21 +15,48 @@ export interface VerifyBundleOptions {
   readonly proofArchive: ReadonlyArray<ProofArchiveEntry>;
 }
 
+function tryParseProofArchiveEntry(entry: ProofArchiveEntry): { electionId: `0x${string}`; publicSchemaId: string; publicSignals: string[]; proofBytes: `0x${string}` } | null {
+  try {
+    const bytes = Buffer.from(entry.payloadHex.startsWith("0x") ? entry.payloadHex.slice(2) : entry.payloadHex, "hex");
+    if (bytes.length === 0) return null;
+    const parsed = JSON.parse(bytes.toString("utf8"));
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return parsed as never;
+  } catch {
+    return null;
+  }
+}
+
 export async function verifyBundle(bundle: AuditBundleV1, options: VerifyBundleOptions): Promise<AuditSummary> {
-  const dedup = deduplicateEvents(bundle.events as Array<typeof bundle.events[number] & { txHash?: string }>);
-  const r1 = auditR1(bundle.events as Array<typeof bundle.events[number] & { txHash?: string }>);
-  const tallies = reconstructTallies(bundle.events, { r0Options: options.r0Options, r1Options: options.r1Options });
+  const dedup = deduplicateEvents(bundle.events as ReadonlyArray<WithTx>);
+  const r1 = auditR1(bundle.events as ReadonlyArray<WithTx>);
+  const tallies = reconstructTallies(bundle.events as ReadonlyArray<WithTx>, { r0Options: options.r0Options, r1Options: options.r1Options });
+  const r1RevealsMissingBucket = (() => {
+    const out: Array<{ ballotCommitment: `0x${string}`; txHash: string }> = [];
+    for (const ev of bundle.events as ReadonlyArray<WithTx>) {
+      if (ev.name === "VoteRevealedV1") {
+        const pl = (ev as { payload: { ballotCommitment: `0x${string}` } }).payload;
+        if (!tallies.r1BucketsByCommitment.has(pl.ballotCommitment)) {
+          out.push({ ballotCommitment: pl.ballotCommitment, txHash: ev.txHash ?? "<no-tx>" });
+        }
+      }
+    }
+    return out;
+  })();
+  const verifierConfigured = !(options.verifier instanceof NoopVerifierAdapter);
   const base = summariseAudit({
     electionId: bundle.electionId,
     dedup,
     r1,
     r0: { counts: tallies.r0.counts },
     r1Counts: tallies.r1.counts,
+    verifierConfigured,
+    r1RevealsMissingBucket,
   });
   const mismatched = [...base.mismatchedHashes];
   const errors = [...base.errors];
 
-  if (options.verifier.id !== "noop") {
+  if (verifierConfigured) {
     for (const entry of options.proofArchive) {
       const env = tryParseProofArchiveEntry(entry);
       if (env === null) {
@@ -43,25 +70,19 @@ export async function verifyBundle(bundle: AuditBundleV1, options: VerifyBundleO
         mismatched.push({ txHash: entry.txHash, reason: "verifier hash mismatch" });
       }
     }
+  } else {
+    mismatched.push({ txHash: "<bundle>", reason: "no verifier configured; every proof is unverified" });
   }
 
   return {
     ...base,
     mismatchedHashes: mismatched,
     errors,
+    // Audit integrator: a NoopVerifier means the bundle is not proven. ok
+    // must be false and the explicit reason must be reported. Never silently
+    // skip proofs and claim ok.
     ok: base.ok && mismatched.length === 0,
   };
-}
-
-function tryParseProofArchiveEntry(entry: ProofArchiveEntry): { electionId: `0x${string}`; publicSchemaId: string; publicSignals: string[]; proofBytes: `0x${string}` } | null {
-  try {
-    const bytes = Buffer.from(entry.payloadHex.startsWith("0x") ? entry.payloadHex.slice(2) : entry.payloadHex, "hex");
-    const parsed = JSON.parse(bytes.toString("utf8"));
-    if (typeof parsed !== "object" || parsed === null) return null;
-    return parsed as never;
-  } catch {
-    return null;
-  }
 }
 
 export interface ReplayOptions {
@@ -81,7 +102,7 @@ export async function replayBundle(bundle: AuditBundleV1, options: ReplayOptions
   });
   const errors = [...summary.errors];
   if (options.expectedTally !== null) {
-    const reconstructed = reconstructTallies(bundle.events, { r0Options: options.r0Options, r1Options: options.r1Options });
+    const reconstructed = reconstructTallies(bundle.events as ReadonlyArray<WithTx>, { r0Options: options.r0Options, r1Options: options.r1Options });
     for (let i = 0; i < options.expectedTally.length; i += 1) {
       const got = reconstructed.r0.counts[i] ?? 0n;
       if (got !== options.expectedTally[i]) {
@@ -115,7 +136,7 @@ export interface BuildBundleArgs {
 
 export function buildBundle(args: BuildBundleArgs): AuditBundleV1 {
   return validateBundle({
-    schema: AUDIT_BUNDLE_SCHEMA,
+    schema: "AUDIT_BUNDLE_V1",
     electionId: args.electionId,
     manifestHash: args.manifestHash,
     contractId: args.contractId,
@@ -126,13 +147,6 @@ export function buildBundle(args: BuildBundleArgs): AuditBundleV1 {
     events: args.events,
     proofArchive: args.proofArchive,
     tallies: { R0: {}, R1: {} },
-  });
-}
-
-export function canonicalJson(input: unknown): string {
-  return JSON.stringify(input, (_k, v) => {
-    if (typeof v === "bigint") return `__bigint__:${v.toString()}`;
-    return v;
   });
 }
 
@@ -149,5 +163,5 @@ export async function writeBundleToFile(bundle: AuditBundleV1, path: string): Pr
   return "0x" + digest;
 }
 
-void NoopVerifierAdapter;
 void ZkqProtocolError;
+void tallyToBundleFormat;

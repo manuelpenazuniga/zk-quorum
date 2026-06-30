@@ -41,7 +41,10 @@ export function createVoterPage() {
     status.textContent = state.message;
     provingProgress.setAttribute("value", String(state.status === "proving" ? 50 : state.status === "submitting" ? 80 : state.status === "accepted" ? 100 : 0));
     txEl.textContent = state.txHash === null ? "" : `tx: ${state.txHash}`;
-    button.setAttribute("disabled", state.status === "proving" || state.status === "submitting" ? "true" : "false");
+    // Audit C2: use the IDL `disabled` property, not a string-typed attribute.
+    // `setAttribute("disabled", "false")` does NOT enable the button in
+    // HTML; the attribute presence is what counts.
+    button.disabled = state.status === "proving" || state.status === "submitting";
   };
   update();
 

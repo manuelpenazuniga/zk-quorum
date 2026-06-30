@@ -1,5 +1,5 @@
 import type { NullifierHash, BallotCommitment, ElectionId, VoteCastV1, VoteCommittedV1, VoteRevealedV1 } from "@zk-quorum/protocol";
-import { type AuditSummary } from "./bundle.js";
+import { type AuditSummary, type AuditBundleV1Tally } from "./bundle.js";
 import { bucketForNullifier, createTallyState, incrementTally, tallyAll, type TallyState } from "@zk-quorum/protocol";
 
 export interface DeduplicationResult {
@@ -66,6 +66,8 @@ export interface TallyReconstruction {
   readonly r0: { readonly counts: bigint[]; readonly total: bigint };
   readonly r1: { readonly counts: bigint[]; readonly total: bigint };
   readonly errors: string[];
+  /** Audit H2: explicit R1 bucket-by-ballotCommitment map from the commit events. */
+  readonly r1BucketsByCommitment: ReadonlyMap<BallotCommitment, number>;
 }
 
 function totalOf(counts: bigint[]): bigint {
@@ -81,6 +83,7 @@ export function reconstructTallies(
   let r0: TallyState = createTallyState(options.r0Options);
   let r1: TallyState = createTallyState(options.r1Options);
   const errors: string[] = [];
+  const r1BucketsByCommitment = new Map<BallotCommitment, number>();
 
   for (const ev of events) {
     if (isCast(ev)) {
@@ -92,11 +95,25 @@ export function reconstructTallies(
         errors.push(`r0 increment failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+    if (isCommit(ev)) {
+      // Audit H2: capture the bucket the contract committed to so the reveal
+      // can be tallied into the SAME bucket. The fallback hash-derived bucket
+      // is intentionally NOT computed here.
+      r1BucketsByCommitment.set(ev.payload.ballotCommitment, ev.payload.tallyBucket);
+    }
+  }
+
+  for (const ev of events) {
     if (isReveal(ev)) {
       const pl = ev.payload;
-      const fallback = ("0x" + "00".repeat(32)) as NullifierHash;
-      const r1nh: NullifierHash = (pl as unknown as { nullifierHash?: NullifierHash }).nullifierHash ?? fallback;
-      const bucket = bucketForNullifier(r1nh);
+      const bc = pl.ballotCommitment;
+      // Audit H2: a reveal must reference a commit event we have already seen.
+      // If it does not, we DO NOT fall back to bucket 0; we report the error.
+      const bucket = r1BucketsByCommitment.get(bc);
+      if (bucket === undefined) {
+        errors.push(`r1 reveal without matching commit: ballotCommitment=${bc}`);
+        continue;
+      }
       try {
         r1 = incrementTally(r1, bucket, pl.vote);
       } catch (e) {
@@ -111,6 +128,7 @@ export function reconstructTallies(
     r0: { counts: r0Counts, total: totalOf(r0Counts) },
     r1: { counts: r1Counts, total: totalOf(r1Counts) },
     errors,
+    r1BucketsByCommitment,
   };
 }
 
@@ -120,7 +138,6 @@ export interface R1AuditResult {
   readonly nonRevealCount: bigint;
   readonly doubleReveals: ReadonlyArray<BallotCommitment>;
   readonly revealsWithoutCommit: ReadonlyArray<{ ballotCommitment: BallotCommitment; txHash: string }>;
-  readonly mismatchedSalts: ReadonlyArray<{ ballotCommitment: BallotCommitment; reason: string }>;
 }
 
 export function auditR1(events: ReadonlyArray<WithTx>): R1AuditResult {
@@ -128,7 +145,6 @@ export function auditR1(events: ReadonlyArray<WithTx>): R1AuditResult {
   const revealed = new Set<BallotCommitment>();
   const doubleReveals: BallotCommitment[] = [];
   const revealsWithoutCommit: Array<{ ballotCommitment: BallotCommitment; txHash: string }> = [];
-  const mismatchedSalts: Array<{ ballotCommitment: BallotCommitment; reason: string }> = [];
 
   for (const ev of events) {
     if (isCommit(ev)) {
@@ -149,14 +165,13 @@ export function auditR1(events: ReadonlyArray<WithTx>): R1AuditResult {
     }
   }
 
-  const nonReveals = Array.from(commitments).filter((bc) => !revealed.has(bc)).length;
+  const nonReveals = BigInt(Array.from(commitments).filter((bc) => !revealed.has(bc)).length);
   return {
     commitCount: BigInt(commitments.size),
     revealCount: BigInt(revealed.size),
-    nonRevealCount: BigInt(nonReveals),
+    nonRevealCount: nonReveals,
     doubleReveals,
     revealsWithoutCommit,
-    mismatchedSalts,
   };
 }
 
@@ -166,14 +181,20 @@ export function summariseAudit(args: {
   readonly r1: R1AuditResult;
   readonly r0: { readonly counts: bigint[] };
   readonly r1Counts: bigint[];
-  readonly manifestHash?: string | null;
+  readonly verifierConfigured: boolean;
+  readonly r1RevealsMissingBucket: ReadonlyArray<{ ballotCommitment: BallotCommitment; txHash: string }>;
 }): AuditSummary {
+  // Audit integrator: when the verifier is the no-op placeholder, the bundle
+  // is by definition NOT proven. ok must be false and the explicit code must
+  // be reported. Never silently skip the proofs.
   const ok =
+    args.verifierConfigured &&
     args.dedup.duplicateNullifiers.length === 0 &&
     args.dedup.duplicateTxs.length === 0 &&
     args.dedup.mismatchedHashes.length === 0 &&
     args.r1.doubleReveals.length === 0 &&
-    args.r1.revealsWithoutCommit.length === 0;
+    args.r1.revealsWithoutCommit.length === 0 &&
+    args.r1RevealsMissingBucket.length === 0;
   return {
     electionId: args.electionId,
     totals: {
@@ -190,7 +211,17 @@ export function summariseAudit(args: {
     mismatchedHashes: args.dedup.mismatchedHashes,
     r1DoubleReveals: args.r1.doubleReveals,
     r1RevealsWithoutCommit: args.r1.revealsWithoutCommit,
+    r1RevealsMissingBucket: args.r1RevealsMissingBucket,
+    verifierConfigured: args.verifierConfigured,
     ok,
     errors: [],
   };
+}
+
+export function tallyToBundleFormat(state: TallyState): AuditBundleV1Tally {
+  const out: Record<string, string> = {};
+  for (const [k, v] of state.cells) {
+    out[k] = v.toString();
+  }
+  return out;
 }

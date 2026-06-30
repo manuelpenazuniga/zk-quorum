@@ -38,4 +38,19 @@ describe("idempotency", () => {
   it("rejects invalid options", () => {
     expect(() => createInMemoryIdempotencyStore({ ttlMs: 0 })).toThrow();
   });
+
+  it("fail() deletes the entry so the caller can retry with the same key (H3)", () => {
+    const s = createInMemoryIdempotencyStore({ ttlMs: 1000 });
+    s.begin("k", 0);
+    s.fail("k", 0);
+    expect(s.size()).toBe(0);
+    // A subsequent begin returns "fresh" again, NOT "in-flight" or "replay".
+    expect(s.begin("k", 0)).toEqual({ kind: "fresh" });
+  });
+
+  it("fail() on a key that was never begun is a no-op", () => {
+    const s = createInMemoryIdempotencyStore({ ttlMs: 1000 });
+    s.fail("never-begun", 0);
+    expect(s.size()).toBe(0);
+  });
 });

@@ -67,7 +67,6 @@ export interface CommitProofEnvelope extends ProofEnvelope {
 export interface RevealEnvelope {
   readonly electionId: ElectionId;
   readonly ballotCommitment: BallotCommitment;
-  readonly nullifierHash: NullifierHash;
   readonly vote: number;
   readonly salt: Bytes32Hex;
 }
@@ -86,16 +85,30 @@ export interface CastResponse {
   readonly status: "accepted" | "duplicate" | "rejected";
   readonly txHash: string | null;
   readonly nullifierHash: NullifierHash;
-  readonly proofHash: Sha256Hex;
-  readonly publicSignalsHash: Sha256Hex;
+  /**
+   * Real SHA-256 of the canonical envelope returned by the off-chain
+   * verifier. `null` whenever the cast was rejected (verifier, simulator,
+   * or submitter): the relay MUST NOT invent a placeholder hash.
+   */
+  readonly proofHash: Sha256Hex | null;
+  /**
+   * Real SHA-256 of canonical publicSignals JSON. `null` on rejection.
+   */
+  readonly publicSignalsHash: Sha256Hex | null;
   readonly rejectReason: string | null;
 }
 
+/**
+ * Frozen response shape for /submit R1 reveal. A reveal has no proof, so
+ * there is no audit-relevant hash to return: the relay attests only the
+ * (electionId, ballotCommitment) pair that will appear on the ledger and
+ * the resulting tx hash. `payloadHash`, `proofHash`, and
+ * `publicSignalsHash` are NOT part of this interface and MUST NOT be
+ * added: a synthetic reveal hash is unauditable and would be fake.
+ */
 export interface RevealResponse {
   readonly status: "accepted" | "rejected";
   readonly txHash: string | null;
   readonly ballotCommitment: BallotCommitment;
-  readonly proofHash: Sha256Hex;
-  readonly publicSignalsHash: Sha256Hex;
   readonly rejectReason: string | null;
 }

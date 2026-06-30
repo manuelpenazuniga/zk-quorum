@@ -4,16 +4,19 @@ import { Groth16SnarkjsVerifier, StellarSubmitter, SorobanSimulator } from "../s
 import { executeCast, executeReveal } from "../src/adapters/pipeline.js";
 import { ZkqProtocolError } from "@zk-quorum/protocol";
 
+// All six public signal slots are canonical decimal Fr strings in [0, r).
+// We use small values (10, 11, 12, 13) that are valid in the BLS12-381
+// scalar field; large hex literals like "0xaa"*32 are > r and invalid.
 const R0 = {
   electionId: ("0x" + "01".repeat(32)) as `0x${string}`,
   publicSchemaId: "PUBLIC_SCHEMA_V1_R0",
   publicSignals: [
-    "0x" + "aa".repeat(32),
+    "10",
     "3",
     "5",
-    "0x" + "02".repeat(32),
-    "0x" + "03".repeat(32),
-    "0x" + "04".repeat(32),
+    "11",
+    "12",
+    "13",
   ],
   proofBytes: ("0x" + "ab".repeat(64)) as `0x${string}`,
 };
@@ -23,7 +26,7 @@ function hex(n: number): `0x${string}` {
 }
 void hex;
 
-const CAST_REQ = { ...R0, idempotencyKey: "k-12345678", clientTag: "ct" };
+const CAST_REQ = { action: "cast" as const, ...R0, idempotencyKey: "k-12345678", clientTag: "ct" };
 
 describe("mockAdapters", () => {
   it("verifier accepts a well-formed envelope and returns hashes", async () => {
@@ -53,6 +56,15 @@ describe("mockAdapters", () => {
   it("verifier can be configured to fail", async () => {
     const v = new MockOffchainVerifier({ acceptAll: false });
     const r = await v.verifyProof(R0);
+    expect(r.ok).toBe(false);
+  });
+
+  it("verifier rejects a public signal equal to or above the Fr modulus (frozen U0)", async () => {
+    const v = new MockOffchainVerifier();
+    // Replace nullifierHash with r; the wire is now decimal strings, so
+    // a value at the modulus is invalid even though it would fit in 32
+    // bytes.
+    const r = await v.verifyProof({ ...R0, publicSignals: [((1n << 255n) - 19n).toString(), ...R0.publicSignals.slice(1)] });
     expect(r.ok).toBe(false);
   });
 
@@ -116,8 +128,8 @@ describe("snarkjs adapter", () => {
   });
 });
 
-describe("pipeline", () => {
-  it("executeCast returns accepted response with hashes", async () => {
+describe("pipeline (frozen U0 wire format)", () => {
+  it("executeCast returns accepted response with verifier hashes", async () => {
     const r = await executeCast({
       envelope: R0,
       verifier: new MockOffchainVerifier(),
@@ -126,9 +138,11 @@ describe("pipeline", () => {
     });
     expect(r.status).toBe("accepted");
     expect(r.txHash).toMatch(/^0x/);
+    expect(r.proofHash).not.toBeNull();
+    expect(r.publicSignalsHash).not.toBeNull();
   });
 
-  it("executeCast rejects on verifier failure", async () => {
+  it("executeCast rejection on verifier failure returns null hashes (NEVER placeholder)", async () => {
     const r = await executeCast({
       envelope: R0,
       verifier: new MockOffchainVerifier({ acceptAll: false }),
@@ -136,10 +150,12 @@ describe("pipeline", () => {
       submitter: new MockSubmitter(),
     });
     expect(r.status).toBe("rejected");
+    expect(r.proofHash).toBeNull();
+    expect(r.publicSignalsHash).toBeNull();
     expect(r.rejectReason).toBeTruthy();
   });
 
-  it("executeCast rejects on simulator failure", async () => {
+  it("executeCast rejection on simulator failure returns null hashes", async () => {
     const r = await executeCast({
       envelope: R0,
       verifier: new MockOffchainVerifier(),
@@ -147,9 +163,11 @@ describe("pipeline", () => {
       submitter: new MockSubmitter(),
     });
     expect(r.status).toBe("rejected");
+    expect(r.proofHash).toBeNull();
+    expect(r.publicSignalsHash).toBeNull();
   });
 
-  it("executeReveal succeeds with valid inputs", async () => {
+  it("executeReveal succeeds and has no payloadHash / proofHash / publicSignalsHash", async () => {
     const r = await executeReveal({
       electionId: ("0x" + "01".repeat(32)),
       ballotCommitment: ("0x" + "02".repeat(32)),
@@ -159,33 +177,95 @@ describe("pipeline", () => {
       simulator: new MockSimulator(),
     });
     expect(r.status).toBe("accepted");
+    expect((r as { payloadHash?: unknown }).payloadHash).toBeUndefined();
+    expect((r as { proofHash?: unknown }).proofHash).toBeUndefined();
+    expect((r as { publicSignalsHash?: unknown }).publicSignalsHash).toBeUndefined();
+  });
+
+  it("executeReveal rejection has no payloadHash / proofHash / publicSignalsHash", async () => {
+    const r = await executeReveal({
+      electionId: ("0x" + "01".repeat(32)),
+      ballotCommitment: ("0x" + "02".repeat(32)),
+      vote: 2,
+      salt: ("0x" + "03".repeat(32)),
+      submitter: new MockSubmitter(),
+      simulator: new MockSimulator({ fail: true }),
+    });
+    expect(r.status).toBe("rejected");
+    expect((r as { payloadHash?: unknown }).payloadHash).toBeUndefined();
   });
 });
 
-describe("request validation", () => {
-  it("validateCastRequestShape accepts the canonical shape", () => {
-    expect(() => validateCastRequestShape(CAST_REQ)).not.toThrow();
+describe("request validation (production requestValidation.ts)", () => {
+  it("validateCastRequestShape accepts the canonical shape (action=cast, 6 decimal Fr signals)", () => {
+    expect(() => validateCastRequestShape(CAST_REQ, { maxProofBytes: 8192 })).not.toThrow();
+  });
+
+  it("validateCastRequestShape requires action='cast'", () => {
+    expect(() => validateCastRequestShape({ ...CAST_REQ, action: "reveal" as never }, { maxProofBytes: 8192 })).toThrow(/action discriminator/);
+    expect(() => validateCastRequestShape({ ...CAST_REQ, action: undefined as never }, { maxProofBytes: 8192 })).toThrow(/action discriminator/);
   });
 
   it("validateCastRequestShape rejects bad schema", () => {
-    expect(() => validateCastRequestShape({ ...CAST_REQ, publicSchemaId: "NOPE" })).toThrow(ZkqProtocolError);
+    expect(() => validateCastRequestShape({ ...CAST_REQ, publicSchemaId: "NOPE" }, { maxProofBytes: 8192 })).toThrow(ZkqProtocolError);
   });
 
   it("validateCastRequestShape rejects bad hex proof", () => {
-    expect(() => validateCastRequestShape({ ...CAST_REQ, proofBytes: "abc" })).toThrow(ZkqProtocolError);
+    expect(() => validateCastRequestShape({ ...CAST_REQ, proofBytes: "abc" as `0x${string}` }, { maxProofBytes: 8192 })).toThrow(ZkqProtocolError);
   });
 
   it("validateCastRequestShape rejects bad idempotency key", () => {
-    expect(() => validateCastRequestShape({ ...CAST_REQ, idempotencyKey: "x" })).toThrow(ZkqProtocolError);
+    expect(() => validateCastRequestShape({ ...CAST_REQ, idempotencyKey: "x" }, { maxProofBytes: 8192 })).toThrow(ZkqProtocolError);
+  });
+
+  it("validateCastRequestShape requires EXACTLY 6 signals (no more, no less)", () => {
+    const tooFew = ["10", "3", "5", "11", "12"]; // 5
+    const tooMany = Array.from({ length: 7 }, (_, i) => String(i + 10)); // 7
+    expect(() => validateCastRequestShape({ ...CAST_REQ, publicSignals: tooFew }, { maxProofBytes: 8192 })).toThrow(/INVALID_SIGNAL_COUNT/);
+    expect(() => validateCastRequestShape({ ...CAST_REQ, publicSignals: tooMany }, { maxProofBytes: 8192 })).toThrow(/INVALID_SIGNAL_COUNT/);
+  });
+
+  it("validateCastRequestShape rejects hex public signals (audit: wire format is decimal)", () => {
+    const hexSignals = ["0x" + "0a".repeat(32), "3", "5", "0x" + "0b".repeat(32), "0x" + "0c".repeat(32), "0x" + "0d".repeat(32)];
+    expect(() => validateCastRequestShape({ ...CAST_REQ, publicSignals: hexSignals }, { maxProofBytes: 8192 })).toThrow(/INVALID_FIELD_ELEMENT/);
+  });
+
+  it("validateCastRequestShape rejects leading-zero public signals", () => {
+    expect(() => validateCastRequestShape({ ...CAST_REQ, publicSignals: ["00", "3", "5", "11", "12", "13"] }, { maxProofBytes: 8192 })).toThrow(/INVALID_FIELD_ELEMENT/);
+  });
+
+  it("validateCastRequestShape rejects oversized proof (integrator)", () => {
+    const big = "0x" + "ab".repeat(8193);
+    expect(() => validateCastRequestShape({ ...CAST_REQ, proofBytes: big as `0x${string}` }, { maxProofBytes: 8192 })).toThrow(ZkqProtocolError);
+  });
+
+  it("validateCastRequestShape rejects publicSignals non-string elements", () => {
+    expect(() => validateCastRequestShape({ ...CAST_REQ, publicSignals: [1, 2, 3, 4, 5, 6] as unknown as string[] }, { maxProofBytes: 8192 })).toThrow(ZkqProtocolError);
+  });
+
+  it("validateCastRequestShape rejects unknown keys (allowlist)", () => {
+    expect(() => validateCastRequestShape({ ...CAST_REQ, foo: "bar" }, { maxProofBytes: 8192 })).toThrow(/unknown key/);
   });
 
   it("validateRevealRequestShape accepts the canonical shape", () => {
     expect(() => validateRevealRequestShape({
+      action: "reveal",
       electionId: "0x" + "01".repeat(32),
-      ballotCommitment: "0x" + "02".repeat(32),
-      nullifierHash: "0x" + "03".repeat(32),
+      ballotCommitment: "0x" + "0a".repeat(32),
       vote: 2,
-      salt: "0x" + "04".repeat(32),
+      salt: "0x" + "0b".repeat(32),
+      idempotencyKey: "k-12345678",
+      clientTag: "ct",
+    })).not.toThrow();
+  });
+
+  it("validateRevealRequestShape accepts uppercase hex32 salt (case-insensitive)", () => {
+    expect(() => validateRevealRequestShape({
+      action: "reveal",
+      electionId: "0x" + "01".repeat(32),
+      ballotCommitment: "0x" + "0A".repeat(32),
+      vote: 2,
+      salt: "0x" + "0B".repeat(32),
       idempotencyKey: "k-12345678",
       clientTag: "ct",
     })).not.toThrow();
@@ -193,13 +273,64 @@ describe("request validation", () => {
 
   it("validateRevealRequestShape rejects negative vote", () => {
     expect(() => validateRevealRequestShape({
+      action: "reveal",
       electionId: "0x" + "01".repeat(32),
-      ballotCommitment: "0x" + "02".repeat(32),
-      nullifierHash: "0x" + "03".repeat(32),
+      ballotCommitment: "0x" + "0a".repeat(32),
       vote: -1,
-      salt: "0x" + "04".repeat(32),
+      salt: "0x" + "0b".repeat(32),
       idempotencyKey: "k-12345678",
       clientTag: "ct",
     })).toThrow(ZkqProtocolError);
+  });
+
+  it("validateRevealRequestShape rejects vote > 15", () => {
+    expect(() => validateRevealRequestShape({
+      action: "reveal",
+      electionId: "0x" + "01".repeat(32),
+      ballotCommitment: "0x" + "0a".repeat(32),
+      vote: 16,
+      salt: "0x" + "0b".repeat(32),
+      idempotencyKey: "k-12345678",
+      clientTag: "ct",
+    })).toThrow(/INVALID_VOTE_RANGE/);
+  });
+
+  it("validateRevealRequestShape rejects salt = 0 (must satisfy 0 < salt < Fr)", () => {
+    expect(() => validateRevealRequestShape({
+      action: "reveal",
+      electionId: "0x" + "01".repeat(32),
+      ballotCommitment: "0x" + "0a".repeat(32),
+      vote: 1,
+      salt: "0x" + "00".repeat(32),
+      idempotencyKey: "k-12345678",
+      clientTag: "ct",
+    })).toThrow(/R1_NON_ZERO_SALT/);
+  });
+
+  it("validateRevealRequestShape rejects salt >= Fr", () => {
+    // r in hex
+    const rHex = "0x" + "73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001";
+    expect(() => validateRevealRequestShape({
+      action: "reveal",
+      electionId: "0x" + "01".repeat(32),
+      ballotCommitment: "0x" + "0a".repeat(32),
+      vote: 1,
+      salt: rHex as `0x${string}`,
+      idempotencyKey: "k-12345678",
+      clientTag: "ct",
+    })).toThrow(/INVALID_FIELD_ELEMENT/);
+  });
+
+  it("validateRevealRequestShape rejects unknown keys (allowlist)", () => {
+    expect(() => validateRevealRequestShape({
+      action: "reveal",
+      electionId: "0x" + "01".repeat(32),
+      ballotCommitment: "0x" + "0a".repeat(32),
+      vote: 1,
+      salt: "0x" + "0b".repeat(32),
+      idempotencyKey: "k-12345678",
+      clientTag: "ct",
+      publicSignals: ["1"],
+    })).toThrow(/unknown key/);
   });
 });

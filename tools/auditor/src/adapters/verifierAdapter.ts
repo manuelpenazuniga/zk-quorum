@@ -1,4 +1,5 @@
 import type { ProofEnvelope, Sha256Hex } from "@zk-quorum/protocol";
+import { ZkqProtocolError } from "@zk-quorum/protocol";
 
 export interface ProofVerification {
   readonly ok: boolean;
@@ -12,16 +13,16 @@ export interface VerifierAdapter {
   verify(envelope: ProofEnvelope): Promise<ProofVerification>;
 }
 
+/**
+ * Audit integrator finding: NoopVerifierAdapter returns ok=false with the
+ * explicit VERIFIER_NOT_CONFIGURED code. The CLI surfaces this so the
+ * auditor never silently skips proofs and claims ok.
+ */
 export class NoopVerifierAdapter implements VerifierAdapter {
   public readonly id = "noop";
   public async verify(envelope: ProofEnvelope): Promise<ProofVerification> {
     void envelope;
-    return {
-      ok: false,
-      publicSignalsHash: ("0x" + "00".repeat(32)) as Sha256Hex,
-      proofHash: ("0x" + "00".repeat(32)) as Sha256Hex,
-      reason: "noop verifier: real Groth16 adapter pending wt/crypto",
-    };
+    throw new ZkqProtocolError("VERIFIER_NOT_CONFIGURED", "no Groth16 verifier configured; every proof in the archive is unverified");
   }
 }
 

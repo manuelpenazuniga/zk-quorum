@@ -2,6 +2,8 @@ import { argv, exit, stderr, stdout } from "node:process";
 import { readFile } from "node:fs/promises";
 import { loadAndReplay, NoopVerifierAdapter, type AuditSummary } from "./index_lib.js";
 import { ZkqProtocolError, isZkqProtocolError } from "@zk-quorum/protocol";
+import { StaticAcceptVerifierAdapter } from "./adapters/verifierAdapter.js";
+import type { VerifierAdapter } from "./adapters/verifierAdapter.js";
 
 interface ParsedArgs {
   readonly command: "verify" | "replay" | "tally" | "r1" | "help";
@@ -10,6 +12,8 @@ interface ParsedArgs {
   readonly r1Options: number;
   readonly expectedTally: string | null;
   readonly json: boolean;
+  readonly acceptHashes: string | null;
+  readonly verifier: "noop" | "static-accept";
 }
 
 function usage(): string {
@@ -28,6 +32,7 @@ function usage(): string {
     "  --r0-options <n>       Number of options for R0 tally (default 5)",
     "  --r1-options <n>       Number of options for R1 tally (default 5)",
     "  --expected-tally <csv> Comma-separated expected R0 counts (replay only)",
+    "  --verifier <id>        'noop' (default, refuses) or 'static-accept:<proofHash>:<publicSignalsHash>'",
     "  --json                 Emit machine-readable JSON on stdout",
     "",
     "Exit code: 0 on ok, 1 on any finding, 2 on usage error.",
@@ -37,7 +42,7 @@ function usage(): string {
 function parseArgs(args: string[]): ParsedArgs {
   const cmd = args[0];
   if (cmd === undefined || cmd === "help" || cmd === "-h" || cmd === "--help") {
-    return { command: "help", r0Options: 5, r1Options: 5, expectedTally: null, json: false };
+    return { command: "help", r0Options: 5, r1Options: 5, expectedTally: null, json: false, acceptHashes: null, verifier: "noop" };
   }
   if (cmd !== "verify" && cmd !== "replay" && cmd !== "tally" && cmd !== "r1") {
     throw new ZkqProtocolError("ADAPTER_NOT_CONFIGURED", `unknown command: ${cmd}`);
@@ -47,6 +52,8 @@ function parseArgs(args: string[]): ParsedArgs {
   let r1Options = 5;
   let expectedTally: string | null = null;
   let json = false;
+  let verifier: "noop" | "static-accept" = "noop";
+  let acceptHashes: string | null = null;
   for (let i = 1; i < args.length; i += 1) {
     const a = args[i]!;
     if (a === "--bundle") {
@@ -57,6 +64,16 @@ function parseArgs(args: string[]): ParsedArgs {
       r1Options = Number.parseInt(args[++i] ?? "5", 10);
     } else if (a === "--expected-tally") {
       expectedTally = args[++i] ?? null;
+    } else if (a === "--verifier") {
+      const v = args[++i] ?? "noop";
+      if (v === "noop") {
+        verifier = "noop";
+      } else if (v.startsWith("static-accept:")) {
+        verifier = "static-accept";
+        acceptHashes = v.slice("static-accept:".length);
+      } else {
+        throw new ZkqProtocolError("ADAPTER_NOT_CONFIGURED", `unknown verifier: ${v}`);
+      }
     } else if (a === "--json") {
       json = true;
     }
@@ -64,12 +81,34 @@ function parseArgs(args: string[]): ParsedArgs {
   if (bundle === undefined) {
     throw new ZkqProtocolError("BUNDLE_INVALID", "--bundle is required");
   }
-  return { command: cmd, bundle, r0Options, r1Options, expectedTally, json };
+  return { command: cmd, bundle, r0Options, r1Options, expectedTally, json, verifier, acceptHashes };
 }
 
 function parseExpectedTally(csv: string | null): bigint[] | null {
   if (csv === null) return null;
   return csv.split(",").map((s) => BigInt(s.trim()));
+}
+
+function parseHashes(spec: string | null): { proofHash: `0x${string}`; publicSignalsHash: `0x${string}` } {
+  if (spec === null) {
+    return {
+      proofHash: ("0x" + "ab".repeat(32)) as `0x${string}`,
+      publicSignalsHash: ("0x" + "cd".repeat(32)) as `0x${string}`,
+    };
+  }
+  const parts = spec.split(":");
+  if (parts.length !== 2) {
+    throw new ZkqProtocolError("BUNDLE_INVALID", "static-accept needs proofHash:publicSignalsHash");
+  }
+  return { proofHash: parts[0] as `0x${string}`, publicSignalsHash: parts[1] as `0x${string}` };
+}
+
+function pickVerifier(args: ParsedArgs): VerifierAdapter {
+  if (args.verifier === "static-accept") {
+    const h = parseHashes(args.acceptHashes);
+    return new StaticAcceptVerifierAdapter(h);
+  }
+  return new NoopVerifierAdapter();
 }
 
 async function main(): Promise<number> {
@@ -86,7 +125,7 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  const verifier = new NoopVerifierAdapter();
+  const verifier = pickVerifier(args);
   const bundlePath = args.bundle!;
   let summary: AuditSummary;
   try {
@@ -112,6 +151,7 @@ async function main(): Promise<number> {
     const r0Total = summary.totals.r0.tally.toString();
     const r1Total = summary.totals.r1.tally.toString();
     stdout.write(`electionId     : ${summary.electionId}\n`);
+    stdout.write(`verifier       : ${verifier.id} (configured=${summary.verifierConfigured})\n`);
     stdout.write(`R0 commits     : ${summary.totals.r0.commits} (tally=${r0Total})\n`);
     stdout.write(`R1 commits     : ${summary.totals.r1.commits}\n`);
     stdout.write(`R1 reveals     : ${summary.totals.r1.reveals}\n`);
@@ -120,8 +160,8 @@ async function main(): Promise<number> {
     stdout.write(`dup nullifiers : ${summary.duplicateNullifiers.length}\n`);
     stdout.write(`r1 double rev. : ${summary.r1DoubleReveals.length}\n`);
     stdout.write(`r1 reveal/comm : ${summary.r1RevealsWithoutCommit.length}\n`);
+    stdout.write(`r1 no bucket   : ${summary.r1RevealsMissingBucket.length}\n`);
     stdout.write(`hash mismatch  : ${summary.mismatchedHashes.length}\n`);
-    stdout.write(`verifier       : ${verifier.id} (no Groth16 adapter; pending wt/crypto)\n`);
   }
   if (!summary.ok || summary.errors.length > 0) {
     return 1;

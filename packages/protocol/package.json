@@ -17,7 +17,8 @@
     "./errors": "./src/errors.ts",
     "./ids": "./src/ids.ts",
     "./version": "./src/version.ts",
-    "./hash": "./src/hash.ts"
+    "./hash": "./src/hash.ts",
+    "./canonical": "./src/canonical.ts"
   },
   "scripts": {
     "test": "vitest run",

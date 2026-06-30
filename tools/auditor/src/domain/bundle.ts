@@ -8,6 +8,15 @@ import type {
 } from "@zk-quorum/protocol";
 import { EVENT_NAME_VOTE_CAST, EVENT_NAME_VOTE_COMMITTED, EVENT_NAME_VOTE_REVEALED, ZKQ_EVENT_SCHEMA_V1 } from "@zk-quorum/protocol";
 
+/**
+ * Audit bundle is JSON-serializable: tallies are plain objects keyed by
+ * `${bucket}:${option}`. ReadonlyMap is not allowed in this struct
+ * (audit integrator finding).
+ */
+export interface AuditBundleV1Tally {
+  readonly [cellKey: string]: string;
+}
+
 export interface AuditBundleV1 {
   readonly schema: "AUDIT_BUNDLE_V1";
   readonly electionId: ElectionId;
@@ -20,8 +29,8 @@ export interface AuditBundleV1 {
   readonly events: ReadonlyArray<ZkQuorumEvent>;
   readonly proofArchive: ReadonlyArray<ProofArchiveEntry>;
   readonly tallies: {
-    readonly R0: ReadonlyMap<number, bigint>;
-    readonly R1: ReadonlyMap<number, bigint>;
+    readonly R0: AuditBundleV1Tally;
+    readonly R1: AuditBundleV1Tally;
   };
 }
 
@@ -43,6 +52,8 @@ export interface AuditSummary {
   readonly mismatchedHashes: ReadonlyArray<{ readonly txHash: string; readonly reason: string }>;
   readonly r1DoubleReveals: ReadonlyArray<BallotCommitment>;
   readonly r1RevealsWithoutCommit: ReadonlyArray<{ readonly ballotCommitment: BallotCommitment; readonly txHash: string }>;
+  readonly r1RevealsMissingBucket: ReadonlyArray<{ readonly ballotCommitment: BallotCommitment; readonly txHash: string }>;
+  readonly verifierConfigured: boolean;
   readonly ok: boolean;
   readonly errors: ReadonlyArray<string>;
 }
