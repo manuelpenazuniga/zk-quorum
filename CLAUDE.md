@@ -26,11 +26,11 @@ registrarse al comenzar la ejecución. Freeze interno:
 ## Stack congelado
 
 - Groth16 sobre BLS12-381.
-- Circom 2.2.3 y snarkjs 0.7.x.
+- Circom 2.2.3 y snarkjs 0.7.6.
 - `poseidon255.circom` con `soroban-poseidon = "=25.0.0"` solo después de
   golden vectors.
 - `groth16_verifier` BLS12-381 vía `contractimport!`.
-- `soroban-sdk = "25.1.0"`, Rust 1.96, `wasm32v1-none`.
+- `soroban-sdk = "=25.1.0"`, Rust 1.96, `wasm32v1-none`.
 - Upstream de referencia fijado:
   `stellar/soroban-examples@7b168174ae1268dab91a0190d80a94ab7ff41b59`.
 - No BN254, Semaphore, recursión, MACI ni batch verification custom.
@@ -51,7 +51,8 @@ R1: ballotCommitment = P2(P2(vote, salt), electionScope)
 - `stateRoot`: registro de credential commitments.
 - `associationRoot`: labels elegibles; no se permite zero bypass.
 - `electionScope`: SHA-256 domain-separated con rejection sampling a Fr,
-  ligado a red, contrato, election ID y versión.
+  ligado a red, contrato y election ID. La versión está en el domain tag
+  `zk-quorum:election-scope:v1`; no existe un byte de versión adicional.
 - No se usa Poseidon directo de tres inputs: upstream tiene evidencia
   contradictoria para esa aridad.
 
@@ -67,15 +68,22 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 ## Estado real
 
-- Upstream `privacy-pools`: 9/9 tests pasan.
-- Upstream `groth16_verifier`: 1/1 test pasa.
-- Verifier histórico en testnet:
-  `CACFO5YAVIUZYINQTFDVHE5GBLYJ7ALQERA7AXB235KMWBIPHRRKZ57M`.
-- No existe todavía código versionado del producto.
-- No se preservaron ptau/zkey/proof/VK del spike.
-- Stellar CLI no está instalado en el entorno actual.
-- `spike/bootstrap.sh` todavía no es reproducible: no fija commit y descarga
-  Linux AMD64 incluso cuando se ejecuta en macOS ARM.
+- Plan maestro y ledger multiagente versionados en `main`.
+- Foundation reproducible: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6,
+  Stellar CLI 27 y `wasm32v1-none`.
+- Worktrees aislados: `agent/crypto`, `agent/contract` y `agent/product`.
+- Crypto tiene un primer commit auditado; soundness sin Critical, pero su gate
+  sigue abierto por reproducibilidad, `no_std`, manifests y vectores.
+- Producto tiene un scaffold versionado y una remediación M3 sin commit; su
+  gate sigue abierto por coherencia de wire format y validación.
+- Contrato está sin commit y fue rechazado por Qwen: verifier positivo
+  ignorado, arquitectura sin `contractimport!` y checks canónicos incompletos.
+- No se han integrado las lanes a `main`; no hay despliegue ni setup final.
+- La cuota OpenCode de 5 horas se agotó el 2026-06-29 y detuvo tres
+  remediaciones antes de producir tokens o cambios. Deben relanzarse después
+  del reset, no considerarse completadas.
+- `spike/package.json`, su lockfile y cualquier otro untracked ajeno deben
+  preservarse y nunca entrar por accidente a commits de las lanes.
 
 ## Routing OpenCode
 
@@ -84,5 +92,14 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 - Qwen 3.7 Max: auditoría read-only de security/soundness.
 - GLM-5.2: auditoría read-only de arquitectura/release.
 
-Antes de implementar debe estar cerrado el Gate P1 del plan maestro:
-remediación aplicada, legacy neutralizado y cero Critical/High abiertos.
+## Gate actual
+
+P1 y foundation están cerrados. Están abiertos en paralelo:
+
+1. C0: reproducibilidad crypto;
+2. C1: verifier/contrato Soroban;
+3. U0: protocolo, relayer y auditor.
+
+No integrar una lane con Critical/High, tests ignorados, mocks aceptantes,
+scripts sin versionar o toolchain fuera de pin. El estado detallado está en
+`docs/plan/OPEN-CODE-EXECUTION-LOG.md`.

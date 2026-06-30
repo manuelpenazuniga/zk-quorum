@@ -33,8 +33,9 @@ pendiente de registrar.
 - No Semaphore: el upstream no contiene `externalNullifier` ni ballot signal.
 - Nullifier:
   `Poseidon255(nullifierSecret, electionScope)`.
-- `electionScope` está domain-separated por red, contrato, election ID y
-  versión mediante SHA-256 + rejection sampling al scalar field.
+- `electionScope` está domain-separated por red, contrato y election ID
+  mediante SHA-256 + rejection sampling al scalar field. La versión está en
+  el domain tag `zk-quorum:election-scope:v1`, sin byte adicional.
 - `stateRoot` registra credential commitments.
 - `associationRoot` registra labels elegibles y no admite el bypass cero.
 - R0: voto público, identidad oculta.
@@ -57,25 +58,34 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 - Auditoría histórica usa archivo content-addressed, no solo retención RPC.
 - TTL expresado en ledgers y acotado por política/red.
 
-## Estado confirmado 2026-06-29
+## Estado recuperado 2026-06-30
 
-- Repo `main`, 2 commits; no hay código del producto versionado.
-- `spike/package.json` y lockfile están untracked.
-- `privacy-pools`: 9/9 tests.
-- `groth16_verifier`: 1/1 test.
-- Rust/Cargo 1.96, Circom 2.2.3, target `wasm32v1-none`.
-- Node efectivo 22.23.1; la versión final aún debe fijarse.
-- Stellar CLI ausente.
-- No hay ptau/zkey/VK/proof reproducibles en el repo.
-- Verifier histórico:
-  `CACFO5YAVIUZYINQTFDVHE5GBLYJ7ALQERA7AXB235KMWBIPHRRKZ57M`.
+- `main` termina en `53a7612`; contiene plan, foundation y ledger operativo.
+- Toolchain fijado: Node 24, Rust/Cargo 1.96, Circom 2.2.3, snarkjs 0.7.6,
+  Stellar CLI 27 y target `wasm32v1-none`.
+- `agent/crypto` termina en `9b96da1`; Qwen encontró 0 Critical, 3 High.
+  Los scripts witness siguen sin trackear y la remediación no comenzó.
+- `agent/product` termina en `37c7ad4`; conserva una remediación M3 útil pero
+  sin commit. Sus cinco paquetes habían llegado a 188 tests verdes antes de
+  que el integrador detectara inconsistencias adicionales.
+- `agent/contract` sigue en el commit base y conserva implementación sin
+  commit. Qwen encontró 3 Critical y 5 High; no es integrable.
+- Ninguna lane fue mergeada a `main`; setup, proofs reales, integración,
+  testnet, carga y evidencia final siguen pendientes.
+- OpenCode confirmó `5-hour usage limit reached` para M3 y DeepSeek el
+  2026-06-29. Las tres sesiones frescas fallaron con 0 tokens y 0 cambios.
+- `spike/package.json`, su lockfile y otros untracked ajenos deben preservarse.
 
 ## Siguiente gate
 
-Cerrar P1 del plan maestro:
+Relanzar después del reset de cuota, con sesiones frescas y worktrees
+existentes:
 
-1. incorporar auditorías Qwen/GLM;
-2. neutralizar docs legacy;
-3. verificar `git diff --check`;
-4. identificar/committear el plan antes de lanzar agentes de implementación;
-5. comenzar F0 solo con cero Critical/High abiertos.
+1. DeepSeek V4 Pro cierra C0 en `agent/crypto`;
+2. DeepSeek V4 Pro cierra C1 en `agent/contract`;
+3. MiniMax M3 cierra U0 en `agent/product`;
+4. Qwen 3.7 Max re-audita cada commit read-only;
+5. el integrador repite los tests y sólo entonces hace cherry-pick.
+
+Detalles y acceptance tests:
+`docs/plan/OPEN-CODE-EXECUTION-LOG.md`.
