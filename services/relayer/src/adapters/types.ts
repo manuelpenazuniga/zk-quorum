@@ -63,6 +63,8 @@ export interface SubmitFailure {
   readonly reason: string;
   readonly code?: ZkqErrorCode;
   readonly txHash?: string;
+  /** If true, the submitter detected a duplicate nullifier for this election. */
+  readonly duplicate?: boolean;
 }
 
 export type SubmitResult = SubmitSuccess | SubmitFailure;

@@ -14,10 +14,11 @@ identifies the ballot on the ledger (plan §8).
   is a shared relayer account; production deployments must rotate the
   submitter per deployment.
 - The off-chain verifier, simulator, and submitter are all **injectable
-  adapters** in `src/adapters/`. The relayer boots with mocks; the production
-  wiring lives behind the `Groth16SnarkjsVerifier` and `StellarSubmitter`
-  classes that reject with `ADAPTER_NOT_CONFIGURED` until the artefacts are
-  integrated.
+  adapters** in `src/adapters/`. The production entry point (`src/index.ts`)
+  refuses to start while the unconfigured `Groth16SnarkjsVerifier`,
+  `SorobanSimulator`, or `StellarSubmitter` is in scope. Mocks are only wired
+  by the test factory (`src/testDeps.ts`) and are never imported by production
+  code.
 
 ## Routes
 

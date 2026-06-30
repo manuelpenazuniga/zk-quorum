@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MockRelayAdapter } from "../src/adapters/relayAdapter.js";
+import { HttpRelayAdapter, MockRelayAdapter } from "../src/adapters/relayAdapter.js";
 import type { CastRequest, RevealRequest } from "@zk-quorum/protocol";
 
 // Canonical decimal Fr wire format (no 0x, no leading zeros, in [0, r)).
@@ -20,6 +20,15 @@ const REVEAL_REQ: RevealRequest = {
   idempotencyKey: "k-12345678",
   clientTag: "ct",
 };
+
+function fakeFetch(status: number, body: unknown): typeof fetch {
+  return async () =>
+    ({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+    }) as Response;
+}
 
 describe("MockRelayAdapter", () => {
   it("accepts cast", async () => {
@@ -59,5 +68,40 @@ describe("MockRelayAdapter", () => {
   it("exposes a stable endpoint label", () => {
     const a = new MockRelayAdapter();
     expect(a.endpoint).toBe("mock://relayer");
+  });
+
+  it("accepted cast response has all four non-null fields and null rejectReason", async () => {
+    const a = new MockRelayAdapter();
+    const r = await a.submitCast(R0_REQ);
+    expect(r.status).toBe("accepted");
+    expect(r.txHash).not.toBeNull();
+    expect(r.nullifierHash).not.toBeNull();
+    expect(r.proofHash).not.toBeNull();
+    expect(r.publicSignalsHash).not.toBeNull();
+    expect(r.rejectReason).toBeNull();
+  });
+});
+
+describe("HttpRelayAdapter", () => {
+  it("HTTP error returns rejected with all hash fields null and does not derive nullifier from request", async () => {
+    const a = new HttpRelayAdapter("http://localhost:9999", fakeFetch(503, { error: { code: "service_unavailable", message: "relay down" } }));
+    const r = await a.submitCast(R0_REQ);
+    expect(r.status).toBe("rejected");
+    expect(r.txHash).toBeNull();
+    expect(r.nullifierHash).toBeNull();
+    expect(r.proofHash).toBeNull();
+    expect(r.publicSignalsHash).toBeNull();
+    expect(r.rejectReason).toBe("relay down");
+  });
+
+  it("HTTP 400 error returns rejected with all hash fields null", async () => {
+    const a = new HttpRelayAdapter("http://localhost:9999", fakeFetch(400, { error: { code: "invalid_request", message: "bad signals" } }));
+    const r = await a.submitCast(R0_REQ);
+    expect(r.status).toBe("rejected");
+    expect(r.txHash).toBeNull();
+    expect(r.nullifierHash).toBeNull();
+    expect(r.proofHash).toBeNull();
+    expect(r.publicSignalsHash).toBeNull();
+    expect(r.rejectReason).toBe("bad signals");
   });
 });

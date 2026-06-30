@@ -108,11 +108,13 @@ export class MockSubmitter implements Submitter {
   public readonly id = "mock-submitter";
   public readonly account: string | null;
   public readonly failNext: { value: boolean; reset?: () => void } | null;
+  public readonly duplicateNext: { value: boolean; reset?: () => void } | null;
   private seq = 0;
 
-  constructor(options: { account?: string | null; failOnce?: boolean } = {}) {
+  constructor(options: { account?: string | null; failOnce?: boolean; duplicateOnce?: boolean } = {}) {
     this.account = options.account ?? null;
     this.failNext = options.failOnce ? { value: true, reset: () => { this.failNext!.value = false; } } : null;
+    this.duplicateNext = options.duplicateOnce ? { value: true, reset: () => { this.duplicateNext!.value = false; } } : null;
   }
 
   public async submitCast(envelope: ProofEnvelope, publicSignalsHash: Sha256Hex, _proofHash: Sha256Hex): Promise<SubmitResult> {
@@ -128,6 +130,16 @@ export class MockSubmitter implements Submitter {
     const txHash = bytesToHex(new Uint8Array(32).map((_, i) => (parsed.nullifierHash.charCodeAt(2 + i * 2) + this.seq + i) & 0xff));
     this.seq += 1;
     void publicSignalsHash;
+    if (this.duplicateNext?.value) {
+      this.duplicateNext.reset?.();
+      return {
+        ok: false,
+        duplicate: true,
+        txHash: txHash as `0x${string}`,
+        reason: "mock forced duplicate nullifier",
+        code: "NULLIFIER_DUPLICATE",
+      };
+    }
     return { ok: true, txHash: txHash as `0x${string}`, fee: 100n };
   }
 
@@ -139,9 +151,6 @@ export class MockSubmitter implements Submitter {
     return { ok: true, txHash: (bytesToHex(new Uint8Array(32).map((_, i) => (input.electionId.charCodeAt(2 + i * 2) + this.seq + i) & 0xff))) as `0x${string}`, fee: 50n };
   }
 }
-
-export const PROOF_HASH_PLACEHOLDER: Sha256Hex = ("0x" + "00".repeat(32)) as Sha256Hex;
-export const PUBLIC_HASH_PLACEHOLDER: Sha256Hex = ("0x" + "11".repeat(32)) as Sha256Hex;
 
 // Re-export the production validators so existing tests that import them
 // from `mockAdapters` keep working. New code MUST import from

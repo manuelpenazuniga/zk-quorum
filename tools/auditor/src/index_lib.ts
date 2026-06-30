@@ -4,4 +4,4 @@ export { loadBundleFromFile, parseBundleJson, validateBundle, canonicalBundle, M
 export type { AuditBundleV1, AuditBundleV1Tally, ProofArchiveEntry, AuditSummary, AuditLogger } from "./domain/bundle.js";
 export { AUDIT_BUNDLE_SCHEMA, NOOP_AUDIT_LOGGER, listEventNames, EVENT_SCHEMA } from "./domain/bundle.js";
 export type { VerifierAdapter, ProofVerification } from "./adapters/verifierAdapter.js";
-export { NoopVerifierAdapter, StaticAcceptVerifierAdapter, PENDING_VERIFIER_REASON } from "./adapters/verifierAdapter.js";
+export { NoopVerifierAdapter, PENDING_VERIFIER_REASON } from "./adapters/verifierAdapter.js";

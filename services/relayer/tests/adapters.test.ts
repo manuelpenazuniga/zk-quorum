@@ -142,7 +142,7 @@ describe("pipeline (frozen U0 wire format)", () => {
     expect(r.publicSignalsHash).not.toBeNull();
   });
 
-  it("executeCast rejection on verifier failure returns null hashes (NEVER placeholder)", async () => {
+  it("executeCast rejection on verifier failure returns null hashes and null nullifier (NEVER placeholder)", async () => {
     const r = await executeCast({
       envelope: R0,
       verifier: new MockOffchainVerifier({ acceptAll: false }),
@@ -150,12 +150,14 @@ describe("pipeline (frozen U0 wire format)", () => {
       submitter: new MockSubmitter(),
     });
     expect(r.status).toBe("rejected");
+    expect(r.txHash).toBeNull();
+    expect(r.nullifierHash).toBeNull();
     expect(r.proofHash).toBeNull();
     expect(r.publicSignalsHash).toBeNull();
     expect(r.rejectReason).toBeTruthy();
   });
 
-  it("executeCast rejection on simulator failure returns null hashes", async () => {
+  it("executeCast rejection on simulator failure returns null hashes and null nullifier", async () => {
     const r = await executeCast({
       envelope: R0,
       verifier: new MockOffchainVerifier(),
@@ -163,8 +165,25 @@ describe("pipeline (frozen U0 wire format)", () => {
       submitter: new MockSubmitter(),
     });
     expect(r.status).toBe("rejected");
+    expect(r.txHash).toBeNull();
+    expect(r.nullifierHash).toBeNull();
     expect(r.proofHash).toBeNull();
     expect(r.publicSignalsHash).toBeNull();
+  });
+
+  it("executeCast duplicate response carries real verifier hashes and a non-null txHash", async () => {
+    const r = await executeCast({
+      envelope: R0,
+      verifier: new MockOffchainVerifier(),
+      simulator: new MockSimulator(),
+      submitter: new MockSubmitter({ duplicateOnce: true }),
+    });
+    expect(r.status).toBe("duplicate");
+    expect(r.txHash).toMatch(/^0x/);
+    expect(r.nullifierHash).toMatch(/^0x/);
+    expect(r.proofHash).toMatch(/^0x/);
+    expect(r.publicSignalsHash).toMatch(/^0x/);
+    expect(r.rejectReason).toBeNull();
   });
 
   it("executeReveal succeeds and has no payloadHash / proofHash / publicSignalsHash", async () => {

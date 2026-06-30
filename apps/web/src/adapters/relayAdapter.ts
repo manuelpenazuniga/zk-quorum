@@ -25,12 +25,13 @@ export class HttpRelayAdapter implements RelayAdapter {
     });
     if (!r.ok) {
       const err = (await r.json().catch(() => ({}))) as { error?: { code?: string; message?: string } };
+      // Frozen U0: an HTTP error from the relay is an external failure.
+      // The client MUST NOT derive a nullifierHash from the request, and
+      // all hash fields must be null on a rejected CastResponse.
       return {
         status: "rejected",
         txHash: null,
-        // nullifierHash is REQUIRED on CastResponse: derive it from the
-        // public signals (canonical decimal, slot 0 is nullifierHash).
-        nullifierHash: decimalFrToHex32(req.publicSignals[0] ?? "0", "nullifierHash"),
+        nullifierHash: null,
         proofHash: null,
         publicSignalsHash: null,
         rejectReason: err.error?.message ?? `relayer ${r.status}`,

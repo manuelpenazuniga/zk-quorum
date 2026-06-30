@@ -26,12 +26,4 @@ export class NoopVerifierAdapter implements VerifierAdapter {
   }
 }
 
-export class StaticAcceptVerifierAdapter implements VerifierAdapter {
-  public readonly id = "static-accept";
-  constructor(private readonly hashes: { proofHash: Sha256Hex; publicSignalsHash: Sha256Hex }) {}
-  public async verify(_envelope: ProofEnvelope): Promise<ProofVerification> {
-    return { ok: true, proofHash: this.hashes.proofHash, publicSignalsHash: this.hashes.publicSignalsHash };
-  }
-}
-
 export const PENDING_VERIFIER_REASON = "groth16-verifier-pending" as const;

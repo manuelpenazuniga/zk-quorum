@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildBundle, hashBundle, verifyBundle, writeBundleToFile, loadAndReplay, parseBundleJson, validateBundle, MAX_AUDIT_EVENTS, MAX_AUDIT_PROOF_ENTRIES, MAX_AUDIT_PROOF_PAYLOAD_BYTES } from "../src/index_lib.js";
-import { NoopVerifierAdapter, StaticAcceptVerifierAdapter } from "../src/adapters/verifierAdapter.js";
+import { NoopVerifierAdapter } from "../src/adapters/verifierAdapter.js";
+import { StaticAcceptVerifierAdapter } from "./helpers/staticAcceptVerifier.js";
 import { ZkqProtocolError } from "@zk-quorum/protocol";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

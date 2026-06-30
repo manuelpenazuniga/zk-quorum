@@ -1,6 +1,15 @@
-import type { CastResponse, CommitProofEnvelope, ProofEnvelope, RevealResponse } from "@zk-quorum/protocol";
+import type {
+  CastResponse,
+  CastResponseAccepted,
+  CastResponseDuplicate,
+  CastResponseRejected,
+  CommitProofEnvelope,
+  NullifierHash,
+  ProofEnvelope,
+  RevealResponse,
+} from "@zk-quorum/protocol";
 import { isHex, parsePublicSignals, PUBLIC_SCHEMAS, ZkqProtocolError } from "@zk-quorum/protocol";
-import type { OffchainVerifier, Simulator, Submitter } from "./types.js";
+import type { OffchainVerifier, Simulator, Submitter, VerifierSuccess } from "./types.js";
 
 export interface CastExecutionInput {
   readonly envelope: ProofEnvelope;
@@ -25,10 +34,53 @@ function envelopeSchema(envelope: ProofEnvelope | CommitProofEnvelope): "PUBLIC_
   throw new ZkqProtocolError("INVALID_SCHEMA_VERSION", "unsupported schema", { id: envelope.publicSchemaId });
 }
 
-function extractNullifier(envelope: ProofEnvelope | CommitProofEnvelope): string {
+function extractNullifier(envelope: ProofEnvelope | CommitProofEnvelope): NullifierHash {
   const schema = PUBLIC_SCHEMAS[envelopeSchema(envelope)]!;
   const parsed = parsePublicSignals(schema, envelope.publicSignals);
   return parsed.nullifierHash;
+}
+
+function buildRejected(rejectReason: string): CastResponseRejected {
+  // Audit U0: a rejected cast returns ALL hash fields null, never a
+  // synthetic placeholder. The `status` string is the only signal.
+  return {
+    status: "rejected",
+    txHash: null,
+    nullifierHash: null,
+    proofHash: null,
+    publicSignalsHash: null,
+    rejectReason,
+  };
+}
+
+function buildAccepted(
+  submit: { readonly txHash: string },
+  nullifierHash: NullifierHash,
+  verification: VerifierSuccess,
+): CastResponseAccepted {
+  return {
+    status: "accepted",
+    txHash: submit.txHash,
+    nullifierHash,
+    proofHash: verification.proofHash,
+    publicSignalsHash: verification.publicSignalsHash,
+    rejectReason: null,
+  };
+}
+
+function buildDuplicate(
+  submit: { readonly txHash: string },
+  nullifierHash: NullifierHash,
+  verification: VerifierSuccess,
+): CastResponseDuplicate {
+  return {
+    status: "duplicate",
+    txHash: submit.txHash,
+    nullifierHash,
+    proofHash: verification.proofHash,
+    publicSignalsHash: verification.publicSignalsHash,
+    rejectReason: null,
+  };
 }
 
 export async function executeCast(input: CastExecutionInput): Promise<CastResponse> {
@@ -38,50 +90,28 @@ export async function executeCast(input: CastExecutionInput): Promise<CastRespon
   }
   const verification = await verifier.verifyProof(envelope);
   if (!verification.ok) {
-    // Audit U0: a rejected cast returns null hashes, never a synthetic
-    // placeholder. The boolean `status` is the only signal of "proven".
-    return {
-      status: "rejected",
-      txHash: null,
-      nullifierHash: extractNullifier(envelope) as `0x${string}`,
-      proofHash: null,
-      publicSignalsHash: null,
-      rejectReason: verification.reason,
-    };
+    return buildRejected(verification.reason);
   }
-  // Audit U0: accepted / successfully-simulated casts propagate the
-  // verifier-returned hashes verbatim. The relay never locally
-  // re-derives a hash for an accepted cast.
   const sim = await simulator.simulateCast(envelope);
   if (!sim.ok) {
-    return {
-      status: "rejected",
-      txHash: null,
-      nullifierHash: extractNullifier(envelope) as `0x${string}`,
-      proofHash: null,
-      publicSignalsHash: null,
-      rejectReason: sim.reason,
-    };
+    return buildRejected(sim.reason);
   }
+  const nullifierHash = extractNullifier(envelope);
   const submit = await submitter.submitCast(envelope, verification.publicSignalsHash, verification.proofHash);
   if (!submit.ok) {
-    return {
-      status: "rejected",
-      txHash: submit.txHash ?? null,
-      nullifierHash: extractNullifier(envelope) as `0x${string}`,
-      proofHash: null,
-      publicSignalsHash: null,
-      rejectReason: submit.reason,
-    };
+    if (submit.duplicate) {
+      // A duplicate still carries the real hashes from the off-chain
+      // verifier; txHash is the on-chain transaction that was rejected
+      // for duplicate-nullifier and must be non-null.
+      return buildDuplicate(
+        { txHash: submit.txHash ?? ("0x" + "00".repeat(32)) },
+        nullifierHash,
+        verification,
+      );
+    }
+    return buildRejected(submit.reason);
   }
-  return {
-    status: "accepted",
-    txHash: submit.txHash,
-    nullifierHash: extractNullifier(envelope) as `0x${string}`,
-    proofHash: verification.proofHash,
-    publicSignalsHash: verification.publicSignalsHash,
-    rejectReason: null,
-  };
+  return buildAccepted(submit, nullifierHash, verification);
 }
 
 export async function executeReveal(input: RevealExecutionInput): Promise<RevealResponse> {

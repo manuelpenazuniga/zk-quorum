@@ -2,7 +2,9 @@
 
 This file lists the precise seams that must be wired before the relayer
 becomes a real submitter against Stellar testnet. The relayer is fully typed
-and tested with mock adapters; the production wiring is just a few imports.
+and tested with mock adapters, but the production entry point refuses to start
+while any unconfigured adapter is in scope; the production wiring is a single
+factory replacement once the artefacts land.
 
 ## 1. Off-chain verifier (depends on `wt/crypto` artefacts)
 

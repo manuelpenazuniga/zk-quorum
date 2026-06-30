@@ -81,22 +81,38 @@ export interface RevealRequest extends RevealEnvelope {
   readonly clientTag: string;
 }
 
-export interface CastResponse {
-  readonly status: "accepted" | "duplicate" | "rejected";
-  readonly txHash: string | null;
+export interface CastResponseAccepted {
+  readonly status: "accepted";
+  readonly txHash: string;
   readonly nullifierHash: NullifierHash;
-  /**
-   * Real SHA-256 of the canonical envelope returned by the off-chain
-   * verifier. `null` whenever the cast was rejected (verifier, simulator,
-   * or submitter): the relay MUST NOT invent a placeholder hash.
-   */
-  readonly proofHash: Sha256Hex | null;
-  /**
-   * Real SHA-256 of canonical publicSignals JSON. `null` on rejection.
-   */
-  readonly publicSignalsHash: Sha256Hex | null;
-  readonly rejectReason: string | null;
+  /** Real SHA-256 of the canonical proof envelope. */
+  readonly proofHash: Sha256Hex;
+  /** Real SHA-256 of canonical publicSignals JSON. */
+  readonly publicSignalsHash: Sha256Hex;
+  readonly rejectReason: null;
 }
+
+export interface CastResponseDuplicate {
+  readonly status: "duplicate";
+  readonly txHash: string;
+  readonly nullifierHash: NullifierHash;
+  /** Real SHA-256 of the canonical proof envelope. */
+  readonly proofHash: Sha256Hex;
+  /** Real SHA-256 of canonical publicSignals JSON. */
+  readonly publicSignalsHash: Sha256Hex;
+  readonly rejectReason: null;
+}
+
+export interface CastResponseRejected {
+  readonly status: "rejected";
+  readonly txHash: null;
+  readonly nullifierHash: null;
+  readonly proofHash: null;
+  readonly publicSignalsHash: null;
+  readonly rejectReason: string;
+}
+
+export type CastResponse = CastResponseAccepted | CastResponseDuplicate | CastResponseRejected;
 
 /**
  * Frozen response shape for /submit R1 reveal. A reveal has no proof, so

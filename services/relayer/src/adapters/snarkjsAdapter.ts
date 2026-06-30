@@ -19,10 +19,9 @@ import { ZkqProtocolError } from "@zk-quorum/protocol";
  *   - the VK JSON for R0 and R1, both BLS12-381
  *   - a working `snarkjs.groth16.verify(vk, publicSignals, proof)` bridge
  *
- * Until then, every call rejects with ADAPTER_NOT_CONFIGURED. The relayer
- * boots with the mock adapter by default; production wiring is a single
- * factory call once the artefacts are integrated (see RELAYER_INTEGRATION.md
- * in services/relayer).
+ * Until then, every call rejects with ADAPTER_NOT_CONFIGURED. The production
+ * entry point refuses to start while this unconfigured adapter is in scope;
+ * mocks are only wired by the test factory (see src/testDeps.ts).
  */
 export class Groth16SnarkjsVerifier implements OffchainVerifier {
   public readonly id = "groth16-snarkjs";
