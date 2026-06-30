@@ -108,10 +108,6 @@ async function main() {
         return w[1];
     }
 
-    async function p3seq(a, b, c) {
-        return p2(await p2(a, b), c);
-    }
-
     const DEPTH = 10;
     const SIZE = 1 << DEPTH;
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# ZK-Quorum C0 gate — clean-clone reproducibility orchestrator.
-# Deletes build artifacts, regenerates from zero, runs the full test suite.
+# ZK-Quorum C0 gate — clean-build reproducibility orchestrator.
+# After the pinned bootstrap and `npm ci` prerequisites are installed, this
+# deletes generated artifacts, regenerates them from zero, and runs the suite.
 #
 # Usage: bash scripts/run-all-tests.sh
 # Exit code: non-zero on first failure.
@@ -27,13 +28,23 @@ if [ ! -x ".bootstrap/bin/circom" ]; then
     echo "ERROR: .bootstrap/bin/circom not found"
     exit 1
 fi
-echo "[OK] circom $($(.bootstrap/bin/circom --version 2>&1) | head -1)"
+CIRCOM_VERSION=$(.bootstrap/bin/circom --version 2>&1 | awk 'NR == 1 { print $3 }')
+if [ "$CIRCOM_VERSION" != "2.2.3" ]; then
+    echo "ERROR: Circom 2.2.3 required, found ${CIRCOM_VERSION:-unknown}"
+    exit 1
+fi
+echo "[OK] circom $CIRCOM_VERSION"
 
 if [ ! -x "node_modules/.bin/snarkjs" ]; then
     echo "ERROR: snarkjs not installed (run npm install)"
     exit 1
 fi
-echo "[OK] snarkjs $(node_modules/.bin/snarkjs --version 2>/dev/null || echo '0.7.6')"
+SNARKJS_VERSION=$(node -p "require('./node_modules/snarkjs/package.json').version")
+if [ "$SNARKJS_VERSION" != "0.7.6" ]; then
+    echo "ERROR: snarkjs 0.7.6 required, found ${SNARKJS_VERSION:-unknown}"
+    exit 1
+fi
+echo "[OK] snarkjs $SNARKJS_VERSION"
 
 if ! command -v python3 &>/dev/null; then
     echo "ERROR: python3 not found"

@@ -25,10 +25,17 @@ function parseHexArray(str) {
 const constantsMatch = src.match(/else if \(t == 3\) \{\s*return (\[[\s\S]*?\]);/);
 if (!constantsMatch) throw new Error('Failed to extract CONSTANTS(t=3)');
 const constants = parseHexArray(constantsMatch[1]);
+const expectedRounds = 64;
+const expectedWidth = 3;
+const expectedConstants = expectedRounds * expectedWidth;
+if (constants.length !== expectedConstants) {
+    throw new Error(
+        `Expected ${expectedConstants} t=3 round constants, found ${constants.length}`
+    );
+}
 
-// Extract MATRIX for t=3
-const matrixMatch = src.match(/else if \(t == 3\) \{[\s\S]*?return\s*(\[[\s\S]*?\])\s*;/);
-// The first "else if (t == 3)" in the file is CONSTANTS, the second is MATRIX
+// Extract MATRIX for t=3. The first "else if (t == 3)" in the file is
+// CONSTANTS; search only after the MATRIX function declaration.
 // Find the second occurrence
 const secondT3 = src.indexOf('else if (t == 3)', src.indexOf('MATRIX'));
 const matrixSection = src.slice(secondT3);
@@ -38,6 +45,15 @@ if (!matrixArrMatch) throw new Error('Failed to extract MATRIX(t=3)');
 // Parse the matrix: it's [ [a,b,c], [d,e,f], [g,h,i] ]
 const matrixText = matrixArrMatch[1];
 const rowHexes = matrixText.split('],').map(part => parseHexArray(part));
+if (
+    rowHexes.length !== expectedWidth ||
+    rowHexes.some(row => row.length !== expectedWidth)
+) {
+    throw new Error(
+        `Expected a ${expectedWidth}x${expectedWidth} t=3 MDS matrix, found ` +
+        rowHexes.map(row => row.length).join('x')
+    );
+}
 
 const output = {
     description: 'Poseidon255 constants for t=3 (rate=2) over BLS12-381 Fr. Extracted from poseidon255_constants.circom.',

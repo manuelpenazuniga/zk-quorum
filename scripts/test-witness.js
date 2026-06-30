@@ -57,7 +57,6 @@ function runWitnessCheck(testName, circuitName, fixtureFile, expectPass) {
     const circuitDir = path.join(BUILD, circuitName);
     const wasmFile = path.join(circuitDir, 'main_js/main.wasm');
     const r1csFile = path.join(circuitDir, 'main.r1cs');
-    const symFile = path.join(circuitDir, 'main.sym');
     const tmpDir = path.join(ROOT, 'tmp');
     fs.mkdirSync(tmpDir, { recursive: true });
 
