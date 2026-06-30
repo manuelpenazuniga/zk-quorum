@@ -54,18 +54,31 @@ export interface Submitter {
 
 export interface SubmitSuccess {
   readonly ok: true;
-  readonly txHash: string;
+  readonly txHash: Sha256Hex;
   readonly fee: bigint | null;
 }
 
-export interface SubmitFailure {
+export interface SubmitFailureBase {
   readonly ok: false;
   readonly reason: string;
   readonly code?: ZkqErrorCode;
-  readonly txHash?: string;
-  /** If true, the submitter detected a duplicate nullifier for this election. */
-  readonly duplicate?: boolean;
 }
+
+export interface SubmitFailureDuplicate extends SubmitFailureBase {
+  /** The submitter detected a duplicate nullifier for this election. */
+  readonly duplicate: true;
+  /** Canonical 32-byte hex txHash of the on-chain transaction that was
+   * rejected for duplicate-nullifier. Required so the relay never
+   * fabricates a placeholder hash. */
+  readonly txHash: Sha256Hex;
+}
+
+export interface SubmitFailureOther extends SubmitFailureBase {
+  readonly duplicate?: false;
+  readonly txHash?: Sha256Hex;
+}
+
+export type SubmitFailure = SubmitFailureDuplicate | SubmitFailureOther;
 
 export type SubmitResult = SubmitSuccess | SubmitFailure;
 

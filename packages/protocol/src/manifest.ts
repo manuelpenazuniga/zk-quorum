@@ -83,7 +83,7 @@ export interface RevealRequest extends RevealEnvelope {
 
 export interface CastResponseAccepted {
   readonly status: "accepted";
-  readonly txHash: string;
+  readonly txHash: Sha256Hex;
   readonly nullifierHash: NullifierHash;
   /** Real SHA-256 of the canonical proof envelope. */
   readonly proofHash: Sha256Hex;
@@ -94,7 +94,7 @@ export interface CastResponseAccepted {
 
 export interface CastResponseDuplicate {
   readonly status: "duplicate";
-  readonly txHash: string;
+  readonly txHash: Sha256Hex;
   readonly nullifierHash: NullifierHash;
   /** Real SHA-256 of the canonical proof envelope. */
   readonly proofHash: Sha256Hex;
@@ -124,7 +124,7 @@ export type CastResponse = CastResponseAccepted | CastResponseDuplicate | CastRe
  */
 export interface RevealResponse {
   readonly status: "accepted" | "rejected";
-  readonly txHash: string | null;
+  readonly txHash: Sha256Hex | null;
   readonly ballotCommitment: BallotCommitment;
   readonly rejectReason: string | null;
 }

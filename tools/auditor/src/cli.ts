@@ -1,4 +1,6 @@
 import { argv, exit, stderr, stdout } from "node:process";
+import { resolve } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { loadAndReplay, NoopVerifierAdapter, type AuditSummary } from "./index_lib.js";
 import { ZkqProtocolError, isZkqProtocolError } from "@zk-quorum/protocol";
 
@@ -134,14 +136,19 @@ async function main(): Promise<number> {
 }
 
 // Only auto-run when this file is the process entry point. Tests import
-// parseArgs without triggering side effects.
-const entryPath = process.argv[1];
-if (entryPath !== undefined && (entryPath.endsWith("/cli.ts") || entryPath.endsWith("\\cli.ts") || entryPath.endsWith("/cli.js") || entryPath.endsWith("\\cli.js"))) {
-  main().then(
-    (code) => exit(code),
-    (e) => {
-      stderr.write(`fatal: ${e instanceof Error ? e.message : String(e)}\n`);
-      exit(2);
-    },
-  );
+// parseArgs without triggering side effects. Use exact file-URL comparison
+// (not a suffix check) so importing cli.ts as a module never runs main().
+const entryArg = argv[1];
+if (entryArg !== undefined) {
+  const entryUrl = pathToFileURL(resolve(entryArg));
+  const thisUrl = pathToFileURL(resolve(fileURLToPath(import.meta.url)));
+  if (entryUrl.href === thisUrl.href) {
+    main().then(
+      (code) => exit(code),
+      (e) => {
+        stderr.write(`fatal: ${e instanceof Error ? e.message : String(e)}\n`);
+        exit(2);
+      },
+    );
+  }
 }

@@ -2,6 +2,7 @@ import {
   type CommitProofEnvelope,
   isHex,
   isHex32,
+  isSha256Hex,
   isZkqProtocolError,
   parsePublicSignals,
   PUBLIC_SCHEMAS,
@@ -10,7 +11,6 @@ import {
   ZkqProtocolError,
   bytesToHex,
   hexToBytes,
-  isSha256Hex,
 } from "@zk-quorum/protocol";
 import {
   type OffchainVerifier,
@@ -127,7 +127,7 @@ export class MockSubmitter implements Submitter {
       return { ok: false, reason: "unknown schema", code: "INVALID_SCHEMA_VERSION" };
     }
     const parsed = parsePublicSignals(schema, envelope.publicSignals);
-    const txHash = bytesToHex(new Uint8Array(32).map((_, i) => (parsed.nullifierHash.charCodeAt(2 + i * 2) + this.seq + i) & 0xff));
+    const txHash = bytesToHex(new Uint8Array(32).map((_, i) => (parsed.nullifierHash.charCodeAt(2 + i * 2) + this.seq + i) & 0xff)) as Sha256Hex;
     this.seq += 1;
     void publicSignalsHash;
     if (this.duplicateNext?.value) {
@@ -135,12 +135,12 @@ export class MockSubmitter implements Submitter {
       return {
         ok: false,
         duplicate: true,
-        txHash: txHash as `0x${string}`,
+        txHash,
         reason: "mock forced duplicate nullifier",
         code: "NULLIFIER_DUPLICATE",
       };
     }
-    return { ok: true, txHash: txHash as `0x${string}`, fee: 100n };
+    return { ok: true, txHash, fee: 100n };
   }
 
   public async submitReveal(input: { electionId: string; ballotCommitment: string; vote: number; salt: string }): Promise<SubmitResult> {
@@ -148,7 +148,8 @@ export class MockSubmitter implements Submitter {
       return { ok: false, reason: "ballotCommitment must be 32-byte hex", code: "INVALID_HEX" };
     }
     this.seq += 1;
-    return { ok: true, txHash: (bytesToHex(new Uint8Array(32).map((_, i) => (input.electionId.charCodeAt(2 + i * 2) + this.seq + i) & 0xff))) as `0x${string}`, fee: 50n };
+    const txHash = bytesToHex(new Uint8Array(32).map((_, i) => (input.electionId.charCodeAt(2 + i * 2) + this.seq + i) & 0xff)) as Sha256Hex;
+    return { ok: true, txHash, fee: 50n };
   }
 }
 

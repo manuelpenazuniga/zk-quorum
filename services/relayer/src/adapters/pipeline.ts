@@ -7,8 +7,9 @@ import type {
   NullifierHash,
   ProofEnvelope,
   RevealResponse,
+  Sha256Hex,
 } from "@zk-quorum/protocol";
-import { isHex, parsePublicSignals, PUBLIC_SCHEMAS, ZkqProtocolError } from "@zk-quorum/protocol";
+import { isHex, isSha256Hex, parsePublicSignals, PUBLIC_SCHEMAS, ZkqProtocolError } from "@zk-quorum/protocol";
 import type { OffchainVerifier, Simulator, Submitter, VerifierSuccess } from "./types.js";
 
 export interface CastExecutionInput {
@@ -54,7 +55,7 @@ function buildRejected(rejectReason: string): CastResponseRejected {
 }
 
 function buildAccepted(
-  submit: { readonly txHash: string },
+  submit: { readonly txHash: Sha256Hex },
   nullifierHash: NullifierHash,
   verification: VerifierSuccess,
 ): CastResponseAccepted {
@@ -69,7 +70,7 @@ function buildAccepted(
 }
 
 function buildDuplicate(
-  submit: { readonly txHash: string },
+  submit: { readonly txHash: Sha256Hex },
   nullifierHash: NullifierHash,
   verification: VerifierSuccess,
 ): CastResponseDuplicate {
@@ -81,6 +82,10 @@ function buildDuplicate(
     publicSignalsHash: verification.publicSignalsHash,
     rejectReason: null,
   };
+}
+
+function isCanonicalTxHash(txHash: unknown): txHash is Sha256Hex {
+  return isSha256Hex(txHash);
 }
 
 export async function executeCast(input: CastExecutionInput): Promise<CastResponse> {
@@ -100,16 +105,18 @@ export async function executeCast(input: CastExecutionInput): Promise<CastRespon
   const submit = await submitter.submitCast(envelope, verification.publicSignalsHash, verification.proofHash);
   if (!submit.ok) {
     if (submit.duplicate) {
-      // A duplicate still carries the real hashes from the off-chain
-      // verifier; txHash is the on-chain transaction that was rejected
-      // for duplicate-nullifier and must be non-null.
-      return buildDuplicate(
-        { txHash: submit.txHash ?? ("0x" + "00".repeat(32)) },
-        nullifierHash,
-        verification,
-      );
+      // Audit integrator: a duplicate must carry the real on-chain txHash.
+      // If the submitter reports duplicate but omits the hash, we reject
+      // rather than fabricating a placeholder.
+      if (!isCanonicalTxHash(submit.txHash)) {
+        return buildRejected("duplicate nullifier reported without a canonical txHash");
+      }
+      return buildDuplicate({ txHash: submit.txHash }, nullifierHash, verification);
     }
     return buildRejected(submit.reason);
+  }
+  if (!isCanonicalTxHash(submit.txHash)) {
+    return buildRejected("submitter returned a non-canonical txHash");
   }
   return buildAccepted(submit, nullifierHash, verification);
 }
@@ -134,11 +141,28 @@ export async function executeReveal(input: RevealExecutionInput): Promise<Reveal
   }
   const submit = await submitter.submitReveal({ electionId, ballotCommitment, vote, salt });
   if (!submit.ok) {
+    const txHash = submit.txHash ?? null;
+    if (txHash !== null && !isSha256Hex(txHash)) {
+      return {
+        status: "rejected",
+        txHash: null,
+        ballotCommitment: ballotCommitment as `0x${string}`,
+        rejectReason: "submitter returned a non-canonical txHash",
+      };
+    }
     return {
       status: "rejected",
-      txHash: submit.txHash ?? null,
+      txHash,
       ballotCommitment: ballotCommitment as `0x${string}`,
       rejectReason: submit.reason,
+    };
+  }
+  if (!isSha256Hex(submit.txHash)) {
+    return {
+      status: "rejected",
+      txHash: null,
+      ballotCommitment: ballotCommitment as `0x${string}`,
+      rejectReason: "submitter returned a non-canonical txHash",
     };
   }
   return {

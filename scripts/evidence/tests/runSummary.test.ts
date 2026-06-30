@@ -14,7 +14,7 @@ describe("runSummary", () => {
       vkR0Hash: "0x" + "11".repeat(32),
       vkR1Hash: "0x" + "22".repeat(32),
       contractId: "C...",
-      txHashes: ["tx-1"],
+      txHashes: ["0x" + "aa".repeat(32)],
       extras: { foo: true },
     });
     expect(s.runId).toBe("r1");
@@ -32,7 +32,7 @@ describe("runSummary", () => {
       vkR0Hash: "0x" + "11".repeat(32),
       vkR1Hash: "0x" + "22".repeat(32),
       contractId: "C...",
-      txHashes: ["tx-1", "tx-2"],
+      txHashes: ["0x" + "aa".repeat(32), "0x" + "bb".repeat(32)],
       extras: {},
     });
     const md = summaryToMarkdown(s);

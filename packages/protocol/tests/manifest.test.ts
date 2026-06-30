@@ -23,11 +23,13 @@ describe("version constants", () => {
   });
 });
 
+const TX1 = ("0x" + "aa".repeat(32)) as `0x${string}`;
+
 describe("CastResponse discriminated union", () => {
   it("accepted has txHash/nullifierHash/proofHash/publicSignalsHash non-null and rejectReason null", () => {
     const r: CastResponse = {
       status: "accepted",
-      txHash: "0xtx",
+      txHash: TX1,
       nullifierHash: "0x" + "11".repeat(32) as `0x${string}`,
       proofHash: "0x" + "22".repeat(32) as `0x${string}`,
       publicSignalsHash: "0x" + "33".repeat(32) as `0x${string}`,
@@ -35,7 +37,7 @@ describe("CastResponse discriminated union", () => {
     };
     expect(isAccepted(r)).toBe(true);
     if (isAccepted(r)) {
-      expect(r.txHash).toBe("0xtx");
+      expect(r.txHash).toBe(TX1);
       expect(r.nullifierHash).toMatch(/^0x/);
       expect(r.proofHash).toMatch(/^0x/);
       expect(r.publicSignalsHash).toMatch(/^0x/);
@@ -46,7 +48,7 @@ describe("CastResponse discriminated union", () => {
   it("duplicate has txHash/nullifierHash/proofHash/publicSignalsHash non-null and rejectReason null", () => {
     const r: CastResponse = {
       status: "duplicate",
-      txHash: "0xtx",
+      txHash: TX1,
       nullifierHash: "0x" + "11".repeat(32) as `0x${string}`,
       proofHash: "0x" + "22".repeat(32) as `0x${string}`,
       publicSignalsHash: "0x" + "33".repeat(32) as `0x${string}`,
@@ -54,7 +56,7 @@ describe("CastResponse discriminated union", () => {
     };
     expect(isDuplicate(r)).toBe(true);
     if (isDuplicate(r)) {
-      expect(r.txHash).toBe("0xtx");
+      expect(r.txHash).toBe(TX1);
       expect(r.nullifierHash).toMatch(/^0x/);
       expect(r.proofHash).toMatch(/^0x/);
       expect(r.publicSignalsHash).toMatch(/^0x/);

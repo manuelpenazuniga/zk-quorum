@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { MockOffchainVerifier, MockSimulator, MockSubmitter, hashEnvelope, validateCastRequestShape, validateRevealRequestShape } from "../src/adapters/mockAdapters.js";
 import { Groth16SnarkjsVerifier, StellarSubmitter, SorobanSimulator } from "../src/adapters/snarkjsAdapter.js";
 import { executeCast, executeReveal } from "../src/adapters/pipeline.js";
+import type { Submitter, SubmitResult } from "../src/adapters/types.js";
 import { ZkqProtocolError } from "@zk-quorum/protocol";
 
 // All six public signal slots are canonical decimal Fr strings in [0, r).
@@ -179,11 +180,59 @@ describe("pipeline (frozen U0 wire format)", () => {
       submitter: new MockSubmitter({ duplicateOnce: true }),
     });
     expect(r.status).toBe("duplicate");
-    expect(r.txHash).toMatch(/^0x/);
+    expect(r.txHash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(r.nullifierHash).toMatch(/^0x/);
     expect(r.proofHash).toMatch(/^0x/);
     expect(r.publicSignalsHash).toMatch(/^0x/);
     expect(r.rejectReason).toBeNull();
+  });
+
+  it("executeCast duplicate without a real txHash is rejected (no synthetic 0x00... placeholder)", async () => {
+    const submitter: Submitter = {
+      id: "fake-duplicate-no-tx",
+      async submitCast() {
+        return { ok: false, duplicate: true, reason: "duplicate nullifier", code: "NULLIFIER_DUPLICATE" } as SubmitResult;
+      },
+      async submitReveal() {
+        return { ok: false, reason: "not implemented" };
+      },
+    };
+    const r = await executeCast({
+      envelope: R0,
+      verifier: new MockOffchainVerifier(),
+      simulator: new MockSimulator(),
+      submitter,
+    });
+    expect(r.status).toBe("rejected");
+    expect(r.txHash).toBeNull();
+    expect(r.nullifierHash).toBeNull();
+    expect(r.proofHash).toBeNull();
+    expect(r.publicSignalsHash).toBeNull();
+    expect(r.rejectReason).toMatch(/non-canonical txHash|duplicate/i);
+  });
+
+  it("executeCast rejects a non-canonical txHash from the submitter", async () => {
+    const submitter: Submitter = {
+      id: "fake-bad-txhash",
+      async submitCast() {
+        return { ok: true, txHash: "0xtx", fee: 100n } as SubmitResult;
+      },
+      async submitReveal() {
+        return { ok: false, reason: "not implemented" };
+      },
+    };
+    const r = await executeCast({
+      envelope: R0,
+      verifier: new MockOffchainVerifier(),
+      simulator: new MockSimulator(),
+      submitter,
+    });
+    expect(r.status).toBe("rejected");
+    expect(r.txHash).toBeNull();
+    expect(r.nullifierHash).toBeNull();
+    expect(r.proofHash).toBeNull();
+    expect(r.publicSignalsHash).toBeNull();
+    expect(r.rejectReason).toMatch(/non-canonical txHash/i);
   });
 
   it("executeReveal succeeds and has no payloadHash / proofHash / publicSignalsHash", async () => {
