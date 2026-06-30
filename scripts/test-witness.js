@@ -110,6 +110,7 @@ runWitnessCheck('r0-negative-vote-5-of-5', 'public-vote', 'r0-vote-out-of-range.
 runWitnessCheck('r0-negative-wrong-root', 'public-vote', 'r0-wrong-root.json', false);
 runWitnessCheck('r0-negative-zero-asp', 'public-vote', 'r0-zero-asp.json', false);
 runWitnessCheck('r0-negative-zero-options', 'public-vote', 'r0-zero-options.json', false);
+runWitnessCheck('r0-negative-label-zero', 'public-vote', 'r0-label-zero.json', false);
 console.log('');
 
 // ========= R0 Scope Vector Tests (ledger §13) =========
@@ -126,6 +127,7 @@ runWitnessCheck('r1-positive-vote-3', 'commit-vote', 'r1-vote-3-salt-42.json', t
 runWitnessCheck('r1-negative-zero-salt', 'commit-vote', 'r1-zero-salt.json', false);
 runWitnessCheck('r1-negative-vote-out-of-range', 'commit-vote', 'r1-vote-out-of-range.json', false);
 runWitnessCheck('r1-negative-zero-options', 'commit-vote', 'r1-zero-options.json', false);
+runWitnessCheck('r1-negative-label-zero', 'commit-vote', 'r1-label-zero.json', false);
 runWitnessCheck('r1-derived-scope', 'commit-vote', 'r1-derived-scope.json', true);
 console.log('');
 

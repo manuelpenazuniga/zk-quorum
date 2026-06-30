@@ -180,6 +180,63 @@ async function main() {
         stringify({...r1Pos, vote: "0", optionCount: "0"}));
     console.log("Wrote r1-zero-options.json");
 
+    // ===== Adversarial label=0 bypass fixtures =====
+    // C0 soundness fix (commit 827de58+3c0755e): label=0 is an association-tree
+    // padding leaf when the eligible tree has only label=111 at index 0.
+    // credentialCommitment(0, 222, 333) = P2(0, P2(222, 333)) in state tree
+    // at index 0; association proof for index 1 proves the zero-padding leaf.
+    //
+    // State tree: credentialCommitment(label=0, ns=222, td=333) at index 0
+    console.log("\nBuilding label-zero adversarial fixtures:");
+    const labelZero = "0";
+    const preCZero = await p2(ns, td);
+    const credCZero = await p2(labelZero, preCZero);
+    console.log("credentialCommitment(0, 222, 333):", String(credCZero));
+    const stateTreeZero = await buildTree([credCZero]);
+    console.log("stateRoot (label=0 cred):", stateTreeZero.root);
+
+    // Association tree: label=111 at index 0 (same as positive), zero-padded.
+    // Index 1 is a zero leaf — the Merkle proof proves label=0 ∈ tree.
+    console.log("associationRoot (label=111 at idx0):", assocTree.root);
+    console.log("association leaf at idx1 (zero padding): 0");
+    console.log("association index 1 siblings:", JSON.stringify(assocTree.leafSiblings[1]));
+
+    // ===== R0 Negative: label=0 with padded-zero association path =====
+    const r0LabelZero = {
+        vote: "0", optionCount: "5",
+        stateRoot: stateTreeZero.root, associationRoot: assocTree.root,
+        electionScope: electionScope,
+        label: labelZero, nullifierSecret: ns, trapdoor: td,
+        stateIndex: "0", stateSiblings: stateTreeZero.leafSiblings[0],
+        associationIndex: "1", associationSiblings: assocTree.leafSiblings[1],
+        _meta: {
+            description: "Adversarial label=0 bypass — uses zero-padded association leaf at index 1",
+            expected: "MUST FAIL after C0 fix (label != 0 constraint)"
+        }
+    };
+    fs.writeFileSync(FIXTURES + '/r0-label-zero.json', stringify(r0LabelZero));
+    console.log("Wrote r0-label-zero.json");
+
+    // ===== R1 Negative: label=0 with padded-zero association path =====
+    const r1VoteZero = "3", r1SaltZero = "42", r1OptionsZero = "5";
+    const voteSaltHashZero = await p2(r1VoteZero, r1SaltZero);
+    const ballotCZero = await p2(voteSaltHashZero, electionScope);
+    const r1LabelZero = {
+        optionCount: r1OptionsZero,
+        stateRoot: stateTreeZero.root, associationRoot: assocTree.root,
+        electionScope: electionScope,
+        label: labelZero, nullifierSecret: ns, trapdoor: td,
+        vote: r1VoteZero, salt: r1SaltZero,
+        stateIndex: "0", stateSiblings: stateTreeZero.leafSiblings[0],
+        associationIndex: "1", associationSiblings: assocTree.leafSiblings[1],
+        _meta: {
+            description: "Adversarial label=0 bypass — uses zero-padded association leaf at index 1",
+            expected: "MUST FAIL after C0 fix (label != 0 constraint)"
+        }
+    };
+    fs.writeFileSync(FIXTURES + '/r1-label-zero.json', stringify(r1LabelZero));
+    console.log("Wrote r1-label-zero.json");
+
     console.log("\nDone. All fixtures written to", FIXTURES);
 }
 

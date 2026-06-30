@@ -32,6 +32,10 @@ template MembershipProof(depth) {
 
     associationRoot === associationProof.out;
 
+    component labelNonZero = IsZero();
+    labelNonZero.in <== label;
+    labelNonZero.out === 0;
+
     component associationRootNonZero = IsZero();
     associationRootNonZero.in <== associationRoot;
     associationRootNonZero.out === 0;
