@@ -68,16 +68,18 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 ## Estado real
 
-- Plan, foundation y ledger están versionados en `main`.
+- `main` termina en `87f7817`; plan, foundation y producto U0 están
+  versionados.
 - Toolchain: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6, Stellar CLI 27
   y `wasm32v1-none`.
-- `agent/crypto` termina en `3c0755e`; su suite limpia pasa y falta auditoría
-  vigente/integración.
-- `agent/contract` conserva implementación sin commit y blockers canónicos/
-  overflow; no es integrable.
-- `agent/product` conserva remediación sin commit y al menos un test rojo; no
-  es integrable.
-- No se han integrado lanes ni ejecutado setup final, testnet o carga.
+- Producto U0 fue auditado por Gemini 3.1 Pro High e integrado con 236 tests.
+  El gate completo aún requiere U-Pre con prover real en navegador.
+- `agent/contract` termina en `3dd2304`: 78 tests, clippy estricto y build
+  verifier-first pasan. Falta audit vigente e integración.
+- `agent/crypto` termina en `0a71316`, pero C0 fue rechazado: faltan assets
+  ptau/zkey inmutables recuperables por URL + SHA-256 y hay tres High
+  adicionales. No es integrable.
+- No se han ejecutado E0, testnet, carga ni A0.
 - Los untracked `spike/package.json` y `spike/package-lock.json` son ajenos y
   deben preservarse.
 
@@ -98,5 +100,12 @@ reveal, pero no coercion resistance y puede tener non-reveals.
   Plus sí está autorizado sólo para auditoría fallback.
 - Todos los modelos OpenCode deben usar IDs `opencode-go/...`; no OpenCode Zen.
 
-P1 y foundation están cerrados. Antes de integrar una lane deben estar verdes
+## Protocolo de contexto
+
+Aplicar `docs/internal/agent-context-protocol.md`: commits estabilizados antes
+de auditar, un auditor por commit, salida visible menor a 800 tokens, logs
+completos fuera del chat, audits incrementales y audit integral en A0.
+
+P1 y foundation están cerrados. C1 espera audit; C0 está bloqueado; U0 está
+integrado pero U-Pre pendiente. Antes de integrar una lane deben estar verdes
 sus tests y las auditorías vigentes sin Critical/High.

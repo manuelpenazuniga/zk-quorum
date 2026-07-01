@@ -282,6 +282,21 @@ mantiene el estado, escribe briefs, revisa outputs y decide gates sin escribir
 código de producción. GPT-5.5 high recibe sólo diffs estabilizados y evidencia
 completa.
 
+### 8.1 Controles obligatorios de contexto
+
+- salida visible por agente menor a 800 tokens;
+- logs completos en `/tmp/zkq-agent-runs/<TASK_ID>/`;
+- éxito resumido como comando, conteo, hashes y `PASS`;
+- fallo resumido con primer error y tail máximo de 40 líneas;
+- no imprimir diffs completos;
+- no auditar worktrees sucios;
+- un auditor primario por commit;
+- auditoría incremental durante desarrollo y revisión integral en A0;
+- checkpoint después de cada gate.
+
+El formato y ciclo exactos están congelados en
+`docs/internal/agent-context-protocol.md`.
+
 ## 9. Modelos retirados
 
 | Modelo | Estado | Motivo |

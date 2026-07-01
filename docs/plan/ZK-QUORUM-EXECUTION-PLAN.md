@@ -923,25 +923,52 @@ de producción dentro de ellos se delega a un implementador.
 
 ### 11.4 Contrato de salida de cada agente
 
-Cada sesión termina con:
+El protocolo operacional completo está en
+`docs/internal/agent-context-protocol.md`. Cada sesión recibe un bundle mínimo
+con task, worktree absoluto, commit base, ownership, cláusulas aplicables,
+acceptance criteria y comandos. No recibe por defecto todos los documentos
+históricos.
+
+Cada sesión guarda logs completos en `/tmp/zkq-agent-runs/<TASK_ID>/` y termina
+con una salida visible menor a 800 tokens:
 
 ```text
 STATUS: done | partial | blocked
 TASK_ID:
-BRANCH:
+BASE_COMMIT:
 COMMIT:
 FILES_CHANGED:
-TESTS_RUN:
-TEST_RESULTS:
-ASSUMPTIONS:
-KNOWN_LIMITATIONS:
+TESTS:
+LINT:
+HASHES:
+FINDINGS: Critical/High/Medium/Low
 BLOCKERS:
+REPORT_PATH:
 NEXT_SAFE_STEP:
 ```
 
-No se acepta “done” sin tests o evidencia explícita de por qué no aplican.
+No se imprimen diffs ni logs completos. En éxito se reportan comando, conteo y
+`PASS`; en fallo, el primer error relevante y un tail máximo de 40 líneas. No
+se acepta `done` sin commit limpio, tests o evidencia explícita de por qué no
+aplican.
 
-### 11.5 Reglas de escalamiento
+### 11.5 Flujo de bajo consumo sin reducción de calidad
+
+1. Un implementador produce un commit estabilizado.
+2. Codex ejecuta preflight mecánico antes de consumir una auditoría.
+3. Gemini 3.1 Pro High audita el delta exacto y las invariantes aplicables.
+4. No se auditan worktrees sucios ni el mismo commit con dos modelos en
+   paralelo.
+5. Un segundo auditor sólo se abre por indisponibilidad, desacuerdo
+   reproducible, Critical/High o gate premium.
+6. GPT-5.5 high recibe únicamente C1/A0/fondos después de tests verdes y audit
+   primario; nunca se usa para explorar una implementación inestable.
+7. A0 conserva la auditoría integral. Los audits incrementales no reemplazan
+   el gate final.
+8. Cada integración produce un checkpoint durable y el siguiente turno parte
+   de ese resumen, no del transcript completo.
+
+### 11.6 Reglas de escalamiento
 
 - M3 encuentra un problema ZK/Rust no mecánico: escala inmediatamente a V4 Pro.
 - M3 falla una vez por comprensión multiarchivo: entrega diagnóstico y se
@@ -964,7 +991,7 @@ No se acepta “done” sin tests o evidencia explícita de por qué no aplican.
 - Hallazgo Critical/High bloquea merge/release.
 - Divergencia entre auditores se resuelve con reproducción, no por votación.
 
-### 11.6 Comandos base
+### 11.7 Comandos base
 
 Implementación OpenCode Go:
 

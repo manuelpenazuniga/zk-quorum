@@ -68,22 +68,18 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 ## Estado real
 
-- Plan maestro y ledger multiagente versionados en `main`.
+- `main` termina en `87f7817`; contiene plan, foundation y producto U0.
 - Foundation reproducible: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y `wasm32v1-none`.
 - Worktrees aislados: `agent/crypto`, `agent/contract` y `agent/product`.
-- Crypto termina en `3c0755e`: 14 witness tests, 16 Rust tests, tercer engine,
-  `no_std`, manifests y checks estrictos de Circom/snarkjs pasan. Falta
-  auditoría vigente con Gemini 3.1 Pro High y cherry-pick.
-- Producto conserva una remediación M3 amplia sin commit. La sesión fue
-  interrumpida con un test de canonicalización todavía rojo; no es integrable.
-- Contrato conserva implementación sin commit con verifier positivo y
-  `contractimport!`, pero siguen abiertos checks canónicos Fr, validación de
-  roots/scope y reemplazo de arithmetic saturating.
-- No se han integrado las lanes a `main`; no hay despliegue ni setup final.
-- La cuota OpenCode del 2026-06-29 y un intento posterior con el provider
-  incorrecto `opencode/...` no autorizan ningún gate. Toda nueva ejecución usa
-  IDs `opencode-go/...`.
+- Producto U0 fue auditado por Gemini 3.1 Pro High e integrado con 236 tests.
+  U-Pre con prover real en navegador sigue pendiente.
+- Contrato termina en `3dd2304`: 78 tests, clippy estricto y build
+  verifier-first pasan. Falta audit vigente e integración.
+- Crypto termina en `0a71316`, pero Gemini 3.1 Pro High rechazó C0 con un
+  Critical, tres High, un Medium y un Low. Falta distribución inmutable de
+  ptau/zkey por URL + SHA-256 y remediar los otros findings.
+- No hay E0, testnet, carga ni A0.
 - `spike/package.json`, su lockfile y cualquier otro untracked ajeno deben
   preservarse y nunca entrar por accidente a commits de las lanes.
 
@@ -102,14 +98,14 @@ reveal, pero no coercion resistance y puede tener non-reveals.
   fondos.
 - Qwen 3.7 Max y GLM-5.2 están retirados por costo, no por calidad.
 
+## Protocolo de contexto
+
+Aplicar `docs/internal/agent-context-protocol.md`: commits estabilizados antes
+de auditar, un auditor por commit, salida visible menor a 800 tokens, logs
+completos fuera del chat, audits incrementales y audit integral en A0.
+
 ## Gate actual
 
-P1 y foundation están cerrados. Están abiertos en paralelo:
-
-1. C0: reproducibilidad crypto;
-2. C1: verifier/contrato Soroban;
-3. U0: protocolo, relayer y auditor.
-
-No integrar una lane con Critical/High, tests ignorados, mocks aceptantes,
-scripts sin versionar o toolchain fuera de pin. El estado detallado está en
-`docs/plan/OPEN-CODE-EXECUTION-LOG.md`.
+P1/foundation están cerrados; C1 espera audit; C0 está bloqueado; U0 está
+integrado pero U-Pre pendiente. No integrar con Critical/High, tests ignorados,
+mocks aceptantes, scripts sin versionar o toolchain fuera de pin.

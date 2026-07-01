@@ -19,6 +19,9 @@
   fallback read-only; Qwen 3.7 Max no se usa.
 - Codex planifica, escribe briefs, audita gates y no escribe código de
   producción.
+- Todo agente usa `docs/internal/agent-context-protocol.md`: salida menor a 800
+  tokens, logs completos fuera del chat, un auditor por commit y checkpoint
+  después de cada gate.
 - Qwen 3.7 Max y GLM-5.2 fueron retirados el 2026-06-30 por costo, no por
   calidad.
 
@@ -67,39 +70,30 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 - Auditoría histórica usa archivo content-addressed, no solo retención RPC.
 - TTL expresado en ledgers y acotado por política/red.
 
-## Estado recuperado y actualizado 2026-06-30
+## Estado actualizado 2026-07-01
 
-- `main` termina en `53a7612`; contiene plan, foundation y ledger operativo.
+- `main` termina en `87f7817`; contiene plan, foundation y producto U0.
 - Toolchain fijado: Node 24, Rust/Cargo 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y target `wasm32v1-none`.
-- `agent/crypto` termina en `3c0755e`; el orchestrator limpio pasa 14 witness,
-  16 Rust, Python BigInt, clippy y wasm32v1-none. Queda re-audit vigente.
-- `agent/product` termina en `37c7ad4`; conserva una remediación M3 útil pero
-  sin commit. Sus cinco paquetes habían llegado a 188 tests verdes antes de
-  que el integrador detectara inconsistencias adicionales.
-- `agent/contract` sigue sin commit. Tiene verifier positivo y
-  `contractimport!`, pero no es integrable hasta cerrar parsing Fr canónico,
-  validación de roots/scope y arithmetic checked.
-- Ninguna lane fue mergeada a `main`; setup, proofs reales, integración,
-  testnet, carga y evidencia final siguen pendientes.
-- OpenCode confirmó `5-hour usage limit reached` el 2026-06-29. Intentos
-  posteriores con IDs `opencode/...` pertenecían al provider equivocado. El
-  router vigente exige `opencode-go/...`.
+- Producto U0 fue auditado por Gemini 3.1 Pro High e integrado; 236 tests
+  pasan. U-Pre con prover real en navegador sigue pendiente.
+- `agent/contract` termina limpio en `3dd2304`; 78 tests, clippy estricto,
+  WASM y verifier-first pasan. Falta auditoría vigente e integración.
+- `agent/crypto` termina en `0a71316`; C0 fue rechazado con 1 Critical, 3 High,
+  1 Medium y 1 Low. Los ptau/zkey autoritativos deben publicarse como assets
+  inmutables con URL y SHA-256. La autenticación GitHub observada era inválida.
+- E0, testnet, carga, A0 y evidencia final siguen pendientes.
 - `spike/package.json`, su lockfile y otros untracked ajenos deben preservarse.
 
 ## Siguiente gate
 
-Continuar con worktrees existentes y routing vigente:
+Continuar secuencialmente con worktrees existentes y routing vigente:
 
-1. Gemini 3.1 Pro High re-audita C0 `3c0755e`; GPT-5.5 high revisa sólo si
-   aparece un hallazgo crítico o al cerrar A0;
-2. DeepSeek V4 Pro por OpenCode Go cierra C1; Kimi no participa salvo nueva
-   autorización explícita del usuario;
-3. MiniMax M3 por OpenCode Go cierra U0; M2.7 sólo absorbe tests mecánicos;
-4. Gemini 3.1 Pro High audita cada commit final read-only; Qwen 3.7 Plus es
-   fallback;
-5. GPT-5.5 high audita C1/A0;
-6. Codex repite evidencia, decide el gate y sólo entonces integra.
+1. Gemini 3.1 Pro High audita el delta C1 `e3fafab..3dd2304`;
+2. remediar findings o integrar C1 si queda sin Critical/High;
+3. restablecer publicación de assets C0 y remediar `0a71316`;
+4. integrar C0 y ejecutar E0 local;
+5. cerrar U-Pre, testnet, R1, carga, A0 y submission.
 
 Detalles y acceptance tests:
 `docs/plan/OPEN-CODE-EXECUTION-LOG.md`.

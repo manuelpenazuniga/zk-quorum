@@ -1419,3 +1419,143 @@ La revisión confirmó:
 - Qwen 3.7 Max prohibido;
 - Flash Medium/High limitado a worker/preflight;
 - GPT-5.5 high reservado para el gate premium.
+
+### 20.2 U0 aprobado e integrado
+
+Cadena final auditada:
+
+```text
+37c7ad4 scaffold
+1953286 implementación inicial
+b43107f CastResponse/static-accept/runtimes
+6c83b51 txHash/deps/entrypoint
+55e0e10 bin auditor real
+983f20c wrapper robusto y propagación de exit
+```
+
+El preflight Flash High encontró un Medium: `package.json.bin` apuntaba a
+`dist/cli.js`, pero el build no emitía ese archivo. Flash Medium implementó un
+wrapper productivo que usa la dependencia exacta `tsx`; el primer commit
+`55e0e10` fue rechazado por `git diff --check` y propagación incorrecta de
+errores de `spawnSync`. El follow-up `983f20c` añadió un runner separado,
+propagación no-cero de error/signal/status nulo y limpió whitespace.
+
+Verificación local:
+
+```text
+protocol: 74
+relayer:  95
+auditor:  41
+web:      18
+evidence:  8
+total:   236
+auditor build/help: pass
+git diff --check: pass
+```
+
+Auditoría final:
+
+```text
+modelo: Gemini 3.1 Pro (High)
+Critical: 0
+High:     0
+Medium:   0
+Low:      0
+VEREDICTO: PASA
+```
+
+La cadena se integró mecánicamente en `main`:
+
+```text
+5c47d8a scaffold
+a8539ce U0 inicial
+1f45a23 remediación 1
+2b7a0ed remediación 2
+ae696f3 bin auditor
+87f7817 wrapper robusto
+```
+
+### 20.3 C0 continúa bloqueado después de `0a71316`
+
+DeepSeek produjo:
+
+```text
+0a71316 feat(crypto): close C0 gate with Groth16 setup, proof mutations, and reproducibility boundary
+```
+
+El commit añadió setup/prove/verify BLS12-381, mutaciones reales de proof y
+public signals, más negativos, manifests y tests. Evidencia reportada:
+
+```text
+witness:   26
+gate-c0:   61
+manifests: 31
+Poseidon:   5
+Rust:      18
+```
+
+Gemini 3.1 Pro High reprodujo que el gate sigue roto:
+
+```text
+Critical: 1
+High:     3
+Medium:   1
+Low:      1
+VEREDICTO: NO-PASA
+```
+
+Bloqueos:
+
+1. Cada setup limpio genera ptau/zkeys/VKs nuevos y sobrescribe los VK/manifests
+   versionados. Un hash registrado no equivale a reproducibilidad C0.4.
+2. Los ptau/zkeys correspondientes al VK autoritativo no están versionados ni
+   disponibles mediante URL/checksum; `gate-c0` no funciona desde clone limpio.
+3. `run-all-tests.sh` elimina `circuits/build` y no recrea los output dirs antes
+   de Circom.
+4. Los negativos todavía convierten errores operacionales arbitrarios en PASS.
+5. `check-setup-reproducibility.js` rompe el argumento `-n=Final Beacon` y no
+   pertenece al gate principal.
+
+`0a71316` y su prerequisito `2b8adf3` permanecen fuera de `main`. La solución
+correcta requiere assets inmutables ptau/zkey recuperables por URL y SHA-256;
+no se aceptará un trusted setup determinista con toxic waste público.
+
+El remote es `manuelpenazuniga/zk-quorum`, pero `gh auth status` reporta ambos
+tokens locales inválidos. Publicar los assets de release queda bloqueado hasta
+restablecer autenticación GitHub o elegir almacenamiento alternativo.
+
+## 21. Control de contexto y cierre de C1 — 2026-07-01
+
+El usuario ordenó conservar la calidad reduciendo el consumo causado por logs
+completos, relecturas y auditorías duplicadas. Se congeló
+`docs/internal/agent-context-protocol.md` con:
+
+- salida visible menor a 800 tokens;
+- logs completos en `/tmp/zkq-agent-runs/<TASK_ID>/`;
+- bundles mínimos por tarea;
+- preflight antes de auditoría;
+- un auditor por commit;
+- audit incremental durante desarrollo y revisión integral en A0;
+- GPT-5.5 sólo sobre C1/A0/fondos estabilizados;
+- checkpoint durable después de cada gate.
+
+DeepSeek V4 Pro cerró la remediación C1:
+
+```text
+commit: 3dd2304
+base:   e3fafab
+tests:  78/78
+clippy: PASS con -D warnings
+WASM:   PASS
+git diff --check: PASS
+worktree: limpio
+```
+
+La causa del abort del primer cast R0/commit R1 era la extensión incondicional
+de TTL sobre contadores todavía inexistentes. El fix condiciona la extensión a
+la existencia de cada key y añade regresiones positivas R0/R1 a través del
+verifier importado. C1 queda `IMPLEMENTADO, NO AUDITADO, NO INTEGRADO`.
+
+Siguiente paso único: auditoría read-only Gemini 3.1 Pro High del delta
+`e3fafab..3dd2304`. No se abre GPT-5.5 ni otro auditor mientras ese gate
+primario no termine.
