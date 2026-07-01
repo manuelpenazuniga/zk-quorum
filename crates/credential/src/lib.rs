@@ -443,4 +443,94 @@ mod tests {
         };
         assert_eq!(commitment, expected);
     }
+
+    // ── Non-ASCII UTF-8 parity vector ──
+
+    #[test]
+    fn test_election_scope_non_ascii_utf8() {
+        // Verifies scope derivation handles multi-byte UTF-8 characters correctly.
+        // The network passphrase contains: é (U+00E9, 2 bytes), — (U+2014, 3 bytes),
+        // and CJK characters (3 bytes each).
+        let env = env();
+        let network: &[u8] = "Stellar r\u{00E9}seau de test \u{2014} \u{6D4B}\u{8BD5}\u{7F51}\u{7EDC}".as_bytes();
+        let contract_id = [0xCDu8; 32];
+        let election_id = [0xEFu8; 32];
+
+        // Char count ≠ byte count: 35 chars, byte length > 35
+        let byte_len = network.len();
+        let char_count = std::str::from_utf8(network).unwrap().chars().count();
+        assert!(
+            byte_len > char_count,
+            "Non-ASCII network: byte length ({}) must exceed char count ({})",
+            byte_len, char_count
+        );
+
+        let msg_len = scope_message_len(network);
+        // Verify message length accounts for byte length, not char count
+        let domain_tag = ELECTION_SCOPE_DOMAIN_TAG;
+        let expected_msg_len = 4 + domain_tag.len() + 4 + byte_len + 4 + 32 + 4 + 32;
+        assert_eq!(msg_len, expected_msg_len, "scope_message_len must use byte length");
+
+        // Derivation must succeed (not crash, not produce zero)
+        let scope = derive_election_scope(&env, network, &contract_id, &election_id).unwrap();
+        assert!(!slice_is_zero(&scope.to_array()));
+        assert_eq!(scope.to_array().len(), 32);
+
+        // Determinism check
+        let scope2 = derive_election_scope(&env, network, &contract_id, &election_id).unwrap();
+        assert_eq!(scope, scope2, "Non-ASCII scope must be deterministic");
+    }
+
+    // ── nullifierSecret=0 trust boundary documentation ──
+
+    /// Trust boundary: nullifierSecret=0 is NOT constrained in the circuit.
+    ///
+    /// If nullifierSecret=0, the nullifier hash becomes `P2(0, electionScope)`,
+    /// which is deterministic per election scope and collides across different
+    /// credentials that share this secret value.
+    ///
+    /// This is a documented residual risk under the **issuer trust assumption**:
+    /// the issuer is trusted to generate credentials with CSPRNG secrets and
+    /// to emit only one credential per identity. A malicious issuer could issue
+    /// credentials with nullifierSecret=0, causing nullifier collisons and
+    /// denial of service (nullifier already used), but not fraudulent vote
+    /// attribution (different credentials have different commitments).
+    ///
+    /// The soundness model assumes issuer honesty for credential issuance.
+    /// Adding a circuit constraint `nullifierSecret != 0` is feasible but not
+    /// required by the plan §6.1 and does not strengthen the model beyond the
+    /// issuer trust boundary already assumed for credential uniqueness.
+    #[test]
+    fn test_nullifier_secret_zero_collision_documented() {
+        let env = env();
+        let secret = scalar_from_u64(0);
+
+        let scope_bytes =
+            derive_election_scope(&env, b"Testnet", &[0x01u8; 32], &[0x01u8; 32]).unwrap();
+        let scope = scope_to_scalar(&env, &scope_bytes);
+
+        // Two different credentials with nullifierSecret=0 produce the same nullifier
+        let label_a = scalar_from_u64(111);
+        let label_b = scalar_from_u64(222);
+        let trapdoor_a = scalar_from_u64(333);
+        let trapdoor_b = scalar_from_u64(444);
+
+        let cred_a = compute_credential_commitment(&env, &label_a, &secret, &trapdoor_a);
+        let cred_b = compute_credential_commitment(&env, &label_b, &secret, &trapdoor_b);
+
+        // Credential commitments differ (different labels & trapdoors)
+        assert_ne!(cred_a, cred_b, "Different credentials must have different commitments");
+
+        // But nullifier hashes collide (same nullifierSecret=0, same scope)
+        let n_a = compute_nullifier_hash(&env, &secret, &scope);
+        let n_b = compute_nullifier_hash(&env, &secret, &scope);
+        assert_eq!(n_a, n_b, "nullifierSecret=0 produces nullifier collision — documented risk");
+
+        // sanity: non-zero secrets produce different nullifiers (with same scope)
+        let s1 = scalar_from_u64(1);
+        let s2 = scalar_from_u64(2);
+        let n1 = compute_nullifier_hash(&env, &s1, &scope);
+        let n2 = compute_nullifier_hash(&env, &s2, &scope);
+        assert_ne!(n1, n2, "Different secrets MUST produce different nullifiers");
+    }
 }

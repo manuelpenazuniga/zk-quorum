@@ -43,8 +43,8 @@ function compileCircuit(name, circomFile) {
     execSync(cmd, { stdio: 'pipe', cwd: ROOT });
 }
 
-// Run snarkjs witness calculation and check
-function runWitnessCheck(testName, circuitName, fixtureFile, expectPass) {
+// expectFailStage: 'witness' = must fail at witness generation, 'constraints' = must pass witness gen but fail constraints, null = expectPass
+function runWitnessCheck(testName, circuitName, fixtureFile, expectPass, expectFailStage) {
     const fixturePath = path.join(FIXTURES, fixtureFile);
     if (!fs.existsSync(fixturePath)) {
         fail(testName, `fixture not found: ${fixtureFile}`);
@@ -77,7 +77,11 @@ function runWitnessCheck(testName, circuitName, fixtureFile, expectPass) {
                 execSync(checkCmd, { stdio: 'pipe', cwd: ROOT, timeout: 30000 });
                 fail(testName, 'negative test: witness generated and passed constraints (should have failed)');
             } catch (e2) {
-                ok(testName + ' [correctly rejected]');
+                if (expectFailStage === 'witness') {
+                    fail(testName, 'expected failure at witness generation, but witness succeeded and constraints failed');
+                } else {
+                    ok(testName + ' [correctly rejected at constraints]');
+                }
             }
         } else {
             // Positive test: check constraints
@@ -88,8 +92,10 @@ function runWitnessCheck(testName, circuitName, fixtureFile, expectPass) {
     } catch (e) {
         if (expectPass) {
             fail(testName, `positive test failed: ${e.stderr ? e.stderr.toString().slice(0,200) : e.message}`);
+        } else if (!expectFailStage || expectFailStage === 'witness') {
+            ok(testName + ' [correctly rejected at witness gen]');
         } else {
-            ok(testName + ' [correctly rejected]');
+            fail(testName, `expected constraints-level rejection, but witness gen failed: ${e.stderr ? e.stderr.toString().slice(0,200) : e.message}`);
         }
     }
 }
@@ -105,30 +111,40 @@ console.log('');
 
 // ========= R0 Tests =========
 console.log('R0 Public Vote Tests:');
-runWitnessCheck('r0-positive-vote-0', 'public-vote', 'r0-vote-0.json', true);
-runWitnessCheck('r0-negative-vote-5-of-5', 'public-vote', 'r0-vote-out-of-range.json', false);
-runWitnessCheck('r0-negative-wrong-root', 'public-vote', 'r0-wrong-root.json', false);
-runWitnessCheck('r0-negative-zero-asp', 'public-vote', 'r0-zero-asp.json', false);
-runWitnessCheck('r0-negative-zero-options', 'public-vote', 'r0-zero-options.json', false);
-runWitnessCheck('r0-negative-label-zero', 'public-vote', 'r0-label-zero.json', false);
+runWitnessCheck('r0-positive-vote-0', 'public-vote', 'r0-vote-0.json', true, null);
+runWitnessCheck('r0-boundary-4-of-5', 'public-vote', 'r0-boundary-4-of-5.json', true, null);
+runWitnessCheck('r0-negative-vote-5-of-5', 'public-vote', 'r0-vote-out-of-range.json', false, 'witness');
+runWitnessCheck('r0-negative-wrong-root', 'public-vote', 'r0-wrong-root.json', false, 'witness');
+runWitnessCheck('r0-negative-zero-asp', 'public-vote', 'r0-zero-asp.json', false, 'witness');
+runWitnessCheck('r0-negative-zero-options', 'public-vote', 'r0-zero-options.json', false, 'witness');
+runWitnessCheck('r0-negative-label-zero', 'public-vote', 'r0-label-zero.json', false, 'witness');
+runWitnessCheck('r0-negative-options-17', 'public-vote', 'r0-options-17.json', false, 'witness');
+runWitnessCheck('r0-negative-wrong-asp-path', 'public-vote', 'r0-wrong-asp-path.json', false, 'witness');
 console.log('');
 
 // ========= R0 Scope Vector Tests (ledger §13) =========
 console.log('R0 Scope Vector Tests:');
-runWitnessCheck('r0-scope-a', 'public-vote', 'r0-scope-a.json', true);
-runWitnessCheck('r0-scope-b', 'public-vote', 'r0-scope-b.json', true);
-runWitnessCheck('r0-scope-c', 'public-vote', 'r0-scope-c.json', true);
-runWitnessCheck('r0-derived-scope', 'public-vote', 'r0-derived-scope.json', true);
+runWitnessCheck('r0-scope-a', 'public-vote', 'r0-scope-a.json', true, null);
+runWitnessCheck('r0-scope-b', 'public-vote', 'r0-scope-b.json', true, null);
+runWitnessCheck('r0-scope-c', 'public-vote', 'r0-scope-c.json', true, null);
+runWitnessCheck('r0-derived-scope', 'public-vote', 'r0-derived-scope.json', true, null);
+runWitnessCheck('r0-non-ascii-scope', 'public-vote', 'r0-non-ascii-scope.json', true, null);
+runWitnessCheck('r0-altered-scope-positive', 'public-vote', 'r0-altered-scope.json', true, null);
 console.log('');
 
 // ========= R1 Tests =========
 console.log('R1 Commit/Reveal Tests:');
-runWitnessCheck('r1-positive-vote-3', 'commit-vote', 'r1-vote-3-salt-42.json', true);
-runWitnessCheck('r1-negative-zero-salt', 'commit-vote', 'r1-zero-salt.json', false);
-runWitnessCheck('r1-negative-vote-out-of-range', 'commit-vote', 'r1-vote-out-of-range.json', false);
-runWitnessCheck('r1-negative-zero-options', 'commit-vote', 'r1-zero-options.json', false);
-runWitnessCheck('r1-negative-label-zero', 'commit-vote', 'r1-label-zero.json', false);
-runWitnessCheck('r1-derived-scope', 'commit-vote', 'r1-derived-scope.json', true);
+runWitnessCheck('r1-positive-vote-3', 'commit-vote', 'r1-vote-3-salt-42.json', true, null);
+runWitnessCheck('r1-boundary-4-of-5', 'commit-vote', 'r1-boundary-4-of-5.json', true, null);
+runWitnessCheck('r1-negative-zero-salt', 'commit-vote', 'r1-zero-salt.json', false, 'witness');
+runWitnessCheck('r1-negative-vote-out-of-range', 'commit-vote', 'r1-vote-out-of-range.json', false, 'witness');
+runWitnessCheck('r1-negative-zero-options', 'commit-vote', 'r1-zero-options.json', false, 'witness');
+runWitnessCheck('r1-negative-label-zero', 'commit-vote', 'r1-label-zero.json', false, 'witness');
+runWitnessCheck('r1-negative-options-17', 'commit-vote', 'r1-options-17.json', false, 'witness');
+runWitnessCheck('r1-negative-wrong-asp-path', 'commit-vote', 'r1-wrong-asp-path.json', false, 'witness');
+runWitnessCheck('r1-derived-scope', 'commit-vote', 'r1-derived-scope.json', true, null);
+runWitnessCheck('r1-altered-scope-positive', 'commit-vote', 'r1-altered-scope.json', true, null);
+runWitnessCheck('r1-wrong-commitment-positive', 'commit-vote', 'r1-wrong-commitment.json', true, null);
 console.log('');
 
 // Cleanup tmp

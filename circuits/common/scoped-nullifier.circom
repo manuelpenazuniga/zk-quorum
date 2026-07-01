@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Scoped nullifier: nullifierHash = P2(nullifierSecret, electionScope)
 // Matches plan §6.1: anti-replay via election-scoped nullifier
+//
+// TRUST BOUNDARY: nullifierSecret=0 is NOT constrained here.
+// If nullifierSecret=0, the nullifier collides across credentials that share
+// the same (electionScope). The issuer is trusted to generate CSPRNG secrets.
+// Adding a nonzero constraint is feasible but does not strengthen the model
+// beyond the issuer trust boundary already assumed for credential issuance.
 
 pragma circom 2.0.0;
 

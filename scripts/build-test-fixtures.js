@@ -180,6 +180,63 @@ async function main() {
         stringify({...r1Pos, vote: "0", optionCount: "0"}));
     console.log("Wrote r1-zero-options.json");
 
+    // ===== R0 Positive: boundary vote=4, optionCount=5 =====
+    fs.writeFileSync(FIXTURES + '/r0-boundary-4-of-5.json',
+        stringify({...r0Pos, vote: "4", optionCount: "5"}));
+    console.log("Wrote r0-boundary-4-of-5.json");
+
+    // ===== R0 Negative: optionCount=17 (exceeds MAX_OPTIONS=16) =====
+    fs.writeFileSync(FIXTURES + '/r0-options-17.json',
+        stringify({...r0Pos, vote: "0", optionCount: "17"}));
+    console.log("Wrote r0-options-17.json");
+
+    // ===== R0 Negative: wrong association path (correct root, wrong leaf) =====
+    fs.writeFileSync(FIXTURES + '/r0-wrong-asp-path.json',
+        stringify({...r0Pos, associationIndex: "1"}));
+    console.log("Wrote r0-wrong-asp-path.json");
+
+    // ===== R0 Negative: altered scope (different from input) =====
+    // The circuit uses the public input electionScope for nullifier,
+    // but the fixture has a different one. The matching proof won't work
+    // because the credential commitment depends on the scope.
+    // Instead: use a fixture where the scope has been altered.
+    const alteredScope = "9999999999999999999999999999999999999999999999999999999999999999";
+    fs.writeFileSync(FIXTURES + '/r0-altered-scope.json',
+        stringify({...r0Pos, electionScope: alteredScope}));
+    console.log("Wrote r0-altered-scope.json");
+
+    // ===== R1 Negative: wrong commitment (vote=4 instead of 3) =====
+    const r1WrongVote = "4";
+    const r1WrongSalt = "42";
+    const r1WrongVoteSaltHash = await p2(r1WrongVote, r1WrongSalt);
+    const r1WrongBallotC = await p2(r1WrongVoteSaltHash, electionScope);
+    fs.writeFileSync(FIXTURES + '/r1-wrong-commitment.json', stringify({
+        ...r1Pos,
+        vote: r1WrongVote,
+        _meta: { description: 'Vote=4 but original fixture had vote=3. ballotCommitment will differ from circuit output.' }
+    }));
+    console.log("Wrote r1-wrong-commitment.json");
+
+    // ===== R1 Positive: boundary vote=4, optionCount=5 =====
+    fs.writeFileSync(FIXTURES + '/r1-boundary-4-of-5.json',
+        stringify({...r1Pos, vote: "4", optionCount: "5"}));
+    console.log("Wrote r1-boundary-4-of-5.json");
+
+    // ===== R1 Negative: optionCount=17 (exceeds MAX_OPTIONS=16) =====
+    fs.writeFileSync(FIXTURES + '/r1-options-17.json',
+        stringify({...r1Pos, vote: "0", optionCount: "17"}));
+    console.log("Wrote r1-options-17.json");
+
+    // ===== R1 Negative: wrong association path =====
+    fs.writeFileSync(FIXTURES + '/r1-wrong-asp-path.json',
+        stringify({...r1Pos, associationIndex: "1"}));
+    console.log("Wrote r1-wrong-asp-path.json");
+
+    // ===== R1 Negative: altered scope =====
+    fs.writeFileSync(FIXTURES + '/r1-altered-scope.json',
+        stringify({...r1Pos, electionScope: alteredScope}));
+    console.log("Wrote r1-altered-scope.json");
+
     // ===== Adversarial label=0 bypass fixtures =====
     // C0 soundness fix (commit 827de58+3c0755e): label=0 is an association-tree
     // padding leaf when the eligible tree has only label=111 at index 0.

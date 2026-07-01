@@ -1,43 +1,114 @@
 {
-    "circuit": "CommitVoteR1",
-    "rung": 1,
-    "description": "Commit/reveal vote with hidden identity. Ballot commitment hides vote until reveal.",
-    "curve": "bls12-381",
-    "proof_system": "Groth16",
-    "circom_version": "2.2.3",
-    "depth": 10,
-    "max_options": 16,
-    "r1cs": {
-        "file": "main.r1cs",
-        "sha256": "29cf1d03350882a6112354c8dff3c2799c72679dc127502ab2d2522ccabe2688",
-        "constraints": 15701,
-        "non_linear": 6094,
-        "linear": 9607,
-        "wires": 15706,
-        "labels": 27597,
-        "template_instances": 77,
-        "public_inputs": 4,
-        "private_inputs": 27,
-        "public_outputs": 2
+  "circuit": "CommitVoteR1",
+  "rung": 1,
+  "description": "Commit/reveal vote with hidden identity. Ballot commitment hides vote until reveal.",
+  "curve": "bls12-381",
+  "proof_system": "Groth16",
+  "circom_version": "2.2.3",
+  "snarkjs_version": "0.7.6",
+  "node_version": "v22.23.1",
+  "depth": 10,
+  "max_options": 16,
+  "setup_power": 14,
+  "setup_power_justification": "2^14 = 16384 > 15702 constraints. Minimum power that covers the constraint count.",
+  "ceremony_type": "TRUSTED_DEV_HACKATHON",
+  "r1cs": {
+    "file": "main.r1cs",
+    "sha256": "b8a726deb273ee222d7225502bb6d109095b40405cc4339b31abcbd5ffb1bae9",
+    "bytes": 2185580,
+    "constraints": 15702,
+    "wires": 15707,
+    "labels": 27600,
+    "template_instances": 77,
+    "public_inputs": 4,
+    "private_inputs": 27,
+    "public_outputs": 2
+  },
+  "setup": {
+    "ptau": {
+      "file": "pot14_final.ptau",
+      "sha256": "7204f204a3d2ed53a7ff719460700768da2ac940eff3938460a2766d340bb773",
+      "bytes": 28315678,
+      "curve": "bls12-381",
+      "power": 14,
+      "contributions": 2,
+      "beacon_hash": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "beacon_iterations_exp": 10
     },
-    "public_schema": {
-        "version": "V1_R1",
-        "total": 6,
-        "signals": [
-            {"index": 0, "name": "nullifierHash", "type": "Fr", "kind": "output"},
-            {"index": 1, "name": "ballotCommitment", "type": "Fr", "kind": "output"},
-            {"index": 2, "name": "optionCount", "type": "u32", "kind": "public_input"},
-            {"index": 3, "name": "stateRoot", "type": "Fr", "kind": "public_input"},
-            {"index": 4, "name": "associationRoot", "type": "Fr", "kind": "public_input"},
-            {"index": 5, "name": "electionScope", "type": "Fr", "kind": "public_input"}
-        ]
+    "zkey": {
+      "file": "r1_final.zkey",
+      "sha256": "fafdb893f156096f7e0579b39cf5e92b89bda3fedbd9a47bee915e53a6f39898",
+      "bytes": 9655290
     },
-    "private_inputs": [
-        "label", "nullifierSecret", "trapdoor", "vote", "salt",
-        "stateSiblings[10]", "stateIndex",
-        "associationSiblings[10]", "associationIndex"
-    ],
-    "setup_power": 14,
-    "setup_power_justification": "2^14 = 16384 > 15701 constraints. Minimum power that covers the constraint count.",
-    "timestamp": "2026-06-30T00:00:00Z"
+    "verification_key": {
+      "file": "r1_vk.json",
+      "sha256": "44176e32881375e9de27b70bb259ae887c519f7981e345f7dd2f76689dfc0d02",
+      "bytes": 5366
+    },
+    "commands": [
+      "snarkjs powersoftau new bls12381 14 pot14_0000.ptau",
+      "snarkjs powersoftau contribute pot14_0000.ptau pot14_0001.ptau --name=\"ZK-Quorum dev contribution\"",
+      "snarkjs powersoftau beacon pot14_0001.ptau pot14_beacon.ptau 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20 10 -n=\"Final Beacon\"",
+      "snarkjs powersoftau prepare phase2 pot14_beacon.ptau pot14_final.ptau",
+      "snarkjs groth16 setup commit-vote/main.r1cs pot14_final.ptau r1_0000.zkey",
+      "snarkjs zkey contribute r1_0000.zkey r1_0001.zkey --name=\"R1 circuit-specific\"",
+      "snarkjs zkey beacon r1_0001.zkey r1_final.zkey 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20 10 -n=\"R1 Final Beacon\"",
+      "snarkjs zkey export verificationkey r1_final.zkey r1_vk.json"
+    ]
+  },
+  "public_schema": {
+    "version": "V1_R1",
+    "total": 6,
+    "signals": [
+      {
+        "index": 0,
+        "name": "nullifierHash",
+        "type": "Fr",
+        "kind": "output"
+      },
+      {
+        "index": 1,
+        "name": "ballotCommitment",
+        "type": "Fr",
+        "kind": "output"
+      },
+      {
+        "index": 2,
+        "name": "optionCount",
+        "type": "u32",
+        "kind": "public_input"
+      },
+      {
+        "index": 3,
+        "name": "stateRoot",
+        "type": "Fr",
+        "kind": "public_input"
+      },
+      {
+        "index": 4,
+        "name": "associationRoot",
+        "type": "Fr",
+        "kind": "public_input"
+      },
+      {
+        "index": 5,
+        "name": "electionScope",
+        "type": "Fr",
+        "kind": "public_input"
+      }
+    ]
+  },
+  "private_inputs": [
+    "label",
+    "nullifierSecret",
+    "trapdoor",
+    "vote",
+    "salt",
+    "stateSiblings[10]",
+    "stateIndex",
+    "associationSiblings[10]",
+    "associationIndex"
+  ],
+  "timestamp": "2026-07-01T15:25:25Z",
+  "reproducibility_boundary": "CIRCUIT_HASHES_ONLY__ZKEY_AND_PTAU_ARE_PER_RUN_NON_REPRODUCIBLE__VK_JSON_FILES_COMMITTED_AS_TRUTH"
 }

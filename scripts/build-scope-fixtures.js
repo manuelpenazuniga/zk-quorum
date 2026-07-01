@@ -31,16 +31,20 @@ function ensureTestVectorsCompiled() {
 }
 
 // Canonical election scope derivation (plan §5.1, ledger §13)
+// Uses Buffer.byteLength for UTF-8 to correctly handle multi-byte characters.
 function deriveElectionScope(networkPassphrase, contractIdHex, electionIdHex, maxAttempts = 255) {
     const domainTag = 'zk-quorum:election-scope:v1';
     const contractId = Buffer.from(contractIdHex, 'hex');
     const electionId = Buffer.from(electionIdHex, 'hex');
 
+    const domainTagBuf = Buffer.from(domainTag, 'utf8');
+    const networkBuf = Buffer.from(networkPassphrase, 'utf8');
+
     const message = Buffer.concat([
-        uint32BE(domainTag.length),
-        Buffer.from(domainTag, 'utf8'),
-        uint32BE(networkPassphrase.length),
-        Buffer.from(networkPassphrase, 'utf8'),
+        uint32BE(domainTagBuf.length),
+        domainTagBuf,
+        uint32BE(networkBuf.length),
+        networkBuf,
         uint32BE(32),
         contractId,
         uint32BE(32),
@@ -233,6 +237,42 @@ async function main() {
     };
     fs.writeFileSync(FIXTURES + '/r1-derived-scope.json', stringify(derivedR1Fixture));
     console.log('  Wrote r1-derived-scope.json');
+
+    // ===== Non-ASCII parity vector =====
+    const nonAsciiNetwork = 'Stellar r\u00E9seau de test \u2014 \u6D4B\u8BD5\u7F51\u7EDC';
+    console.log(`\nNon-ASCII network: "${nonAsciiNetwork}"`);
+    console.log(`  char length: ${nonAsciiNetwork.length}, UTF-8 byte length: ${Buffer.from(nonAsciiNetwork, 'utf8').length}`);
+
+    const nonAsciiDerived = deriveElectionScope(
+        nonAsciiNetwork,
+        'cd'.repeat(32),
+        'ef'.repeat(32)
+    );
+    const nonAsciiScopeBigInt = BigInt('0x' + nonAsciiDerived.scope);
+    console.log(`  Derived scope: ${nonAsciiDerived.scope} (counter=${nonAsciiDerived.counter})`);
+
+    const nonAsciiR0Fixture = {
+        vote: "2",
+        optionCount: "5",
+        stateRoot: stateTree.root,
+        associationRoot: assocTree.root,
+        electionScope: String(nonAsciiScopeBigInt),
+        label, nullifierSecret: ns, trapdoor: td,
+        stateIndex: "0", stateSiblings: stateTree.leafSiblings[0],
+        associationIndex: "0", associationSiblings: assocTree.leafSiblings[0],
+        _meta: {
+            scopeVector: 'non-ascii-parity',
+            network: nonAsciiNetwork,
+            networkCharLen: nonAsciiNetwork.length,
+            networkByteLen: Buffer.from(nonAsciiNetwork, 'utf8').length,
+            contractHex: 'cd'.repeat(32),
+            electionHex: 'ef'.repeat(32),
+            scopeHex: nonAsciiDerived.scope,
+            counter: nonAsciiDerived.counter
+        }
+    };
+    fs.writeFileSync(FIXTURES + '/r0-non-ascii-scope.json', stringify(nonAsciiR0Fixture));
+    console.log('  Wrote r0-non-ascii-scope.json');
 
     // Scope vectors JSON for reference
     fs.writeFileSync(FIXTURES + '/scope_vectors.json', stringify({

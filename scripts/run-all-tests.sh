@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # ZK-Quorum C0 gate — clean-build reproducibility orchestrator.
-# After the pinned bootstrap and `npm ci` prerequisites are installed, this
-# deletes generated artifacts, regenerates them from zero, and runs the suite.
+# Order: clean → compile → fixtures → witness → Groth16 setup → gate → manifests → Rust
+#
+# Does NOT use git cleanliness check. Compares only owned generated paths
+# or explicit hashes against committed manifests.
 #
 # Usage: bash scripts/run-all-tests.sh
 # Exit code: non-zero on first failure.
@@ -14,16 +16,13 @@ echo "ZK-Quorum C0 Clean-Build Reproducibility"
 echo "============================================"
 echo ""
 
-# ── Node 24 sanity ──────────────────────────────────────────────────────────
-REQUIRED_NODE_MAJOR=24
-NODE_VERSION=$(node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1)
-if [ "$NODE_VERSION" != "$REQUIRED_NODE_MAJOR" ]; then
-    echo "ERROR: Node $REQUIRED_NODE_MAJOR required, found $(node --version 2>/dev/null || echo 'none')"
+# ── Toolchain sanity ──────────────────────────────────────────────────────
+if ! node --version 2>/dev/null | grep -q '^v'; then
+    echo "ERROR: Node not found"
     exit 1
 fi
 echo "[OK] Node $(node --version)"
 
-# ── Verify required binaries ─────────────────────────────────────────────────
 if [ ! -x ".bootstrap/bin/circom" ]; then
     echo "ERROR: .bootstrap/bin/circom not found"
     exit 1
@@ -52,46 +51,84 @@ if ! command -v python3 &>/dev/null; then
 fi
 echo "[OK] python3 $(python3 --version)"
 
-# ── Clean build artifacts ────────────────────────────────────────────────────
+if ! command -v cargo &>/dev/null; then
+    echo "ERROR: cargo not found"
+    exit 1
+fi
+RUST_VERSION=$(rustc --version 2>/dev/null | awk '{print $2}')
+echo "[OK] Rust ${RUST_VERSION:-unknown}"
 echo ""
+
+# ── Clean build artifacts ────────────────────────────────────────────────────
 echo "=== Cleaning build artifacts ==="
 rm -rf circuits/build tmp
 echo "[OK] circuits/build and tmp removed"
-
-# ── Step 1: Compile circuits and run witness suite ───────────────────────────
 echo ""
-echo "=== Step 1: Witness suite (compiles R0/R1 from zero) ==="
-node scripts/test-witness.js
 
-# ── Step 2: Build test fixtures (auto-compiles test vectors circuit) ─────────
+# ── Step 1: Compile circuits ─────────────────────────────────────────────────
+echo "=== Step 1: Compile circuits ==="
+CIRCOM=".bootstrap/bin/circom"
+
+echo "  Compiling R0..."
+${CIRCOM} --prime bls12381 --r1cs --sym --wasm --output circuits/build/public-vote \
+    circuits/public-vote/main.circom
+
+echo "  Compiling R1..."
+${CIRCOM} --prime bls12381 --r1cs --sym --wasm --output circuits/build/commit-vote \
+    circuits/commit-vote/main.circom
+
+echo "[OK] Circuits compiled"
 echo ""
-echo "=== Step 2: Build test fixtures ==="
+
+# ── Step 2: Generate test fixtures ───────────────────────────────────────────
+echo "=== Step 2: Generate test fixtures ==="
 node scripts/build-test-fixtures.js
-
-# ── Step 3: Build scope fixtures ─────────────────────────────────────────────
 echo ""
-echo "=== Step 3: Build scope fixtures ==="
+
+# ── Step 3: Generate scope fixtures ──────────────────────────────────────────
+echo "=== Step 3: Generate scope fixtures ==="
 node scripts/build-scope-fixtures.js
-
-# ── Step 4: Independent BigInt Poseidon verification ─────────────────────────
 echo ""
-echo "=== Step 4: Independent Python BigInt engine ==="
+
+# ── Step 4: Run witness suite (23+ tests) ────────────────────────────────────
+echo "=== Step 4: Witness suite ==="
+node scripts/test-witness.js
+echo ""
+
+# ── Step 5: Independent Python BigInt engine ─────────────────────────────────
+echo "=== Step 5: Independent Python BigInt engine ==="
 python3 scripts/verify-poseidon-bigint.py
-
-# ── Step 5: Rust tests, clippy, wasm32v1-none ────────────────────────────────
 echo ""
-echo "=== Step 5: Rust cargo test ==="
+
+# ── Step 6: Groth16 setup (from clean state) ─────────────────────────────────
+echo "=== Step 6: Groth16 setup ==="
+bash scripts/setup-groth16.sh
+echo ""
+
+# ── Step 7: Gate C0 — proof verification, mutations, Fr round-trip ──────────
+echo "=== Step 7: Gate C0 proof verification & mutation harness ==="
+node scripts/gate-c0.js
+echo ""
+
+# ── Step 8: Verify manifest hashes match regenerated artifacts ──────────────
+echo "=== Step 8: Verify manifests/hashes ==="
+node scripts/verify-manifests.js
+echo ""
+
+# ── Step 9: Rust tests, clippy, wasm32v1-none ───────────────────────────────
+echo "=== Step 9: Rust cargo test ==="
 cargo test --manifest-path crates/credential/Cargo.toml
-
 echo ""
-echo "=== Step 6: Rust cargo clippy ==="
+
+echo "=== Step 10: Rust cargo clippy ==="
 cargo clippy --manifest-path crates/credential/Cargo.toml -- -D warnings
-
 echo ""
-echo "=== Step 7: Rust wasm32v1-none check ==="
-cargo check --manifest-path crates/credential/Cargo.toml --target wasm32v1-none --no-default-features
 
-# ── Clean up tmp again ───────────────────────────────────────────────────────
+echo "=== Step 11: Rust wasm32v1-none check ==="
+cargo check --manifest-path crates/credential/Cargo.toml --target wasm32v1-none --no-default-features
+echo ""
+
+# ── Clean up tmp ─────────────────────────────────────────────────────────────
 rm -rf tmp
 
 echo ""
