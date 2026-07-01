@@ -75,7 +75,7 @@ function runSetup(runNum) {
         const r1csFile = path.join(ROOT, 'circuits', 'build', circuitName, 'main.r1cs');
         snarkjs(['groth16', 'setup', r1csFile, ptauFile, zkey0000]);
         const p2 = execSync(`echo "${contribEntropyRung}" | "${SNARKJS}" zkey contribute ${zkey0000} ${zkey0001} --name="R${rung} circuit-specific" -v`, { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', timeout: 600000 });
-        snarkjs(['zkey', 'beacon', zkey0001, zkeyFinal, ptauSeed, String(beaconIters), '-n=R${rung} Final Beacon']);
+        snarkjs(['zkey', 'beacon', zkey0001, zkeyFinal, ptauSeed, String(beaconIters), `-n=R${rung} Final Beacon`]);
         snarkjs(['zkey', 'export', 'verificationkey', zkeyFinal, vkFile]);
 
         const zkeySha = sha256File(zkeyFinal);

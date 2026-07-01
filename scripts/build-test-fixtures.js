@@ -294,6 +294,50 @@ async function main() {
     fs.writeFileSync(FIXTURES + '/r1-label-zero.json', stringify(r1LabelZero));
     console.log("Wrote r1-label-zero.json");
 
+    // ===== Adversarial nullifierSecret=0 bypass fixtures =====
+    // nullifierSecret=0 produces a nullifier collision across credentials sharing
+    // the same electionScope. The circuit must reject this.
+    console.log("\nBuilding nullifier-zero adversarial fixtures:");
+    const nsZero = "0";
+    const preCZeroNS = await p2(nsZero, td);
+    const credCZeroNS = await p2(label, preCZeroNS);
+    console.log("credentialCommitment(nullifierSecret=0):", String(credCZeroNS));
+    const stateTreeZeroNS = await buildTree([credCZeroNS]);
+    console.log("stateRoot (ns=0):", stateTreeZeroNS.root);
+
+    // ===== R0 Negative: nullifierSecret=0 =====
+    const r0NullifierZero = {
+        vote: "0", optionCount: "5",
+        stateRoot: stateTreeZeroNS.root, associationRoot: assocTree.root,
+        electionScope: electionScope,
+        label: label, nullifierSecret: nsZero, trapdoor: td,
+        stateIndex: "0", stateSiblings: stateTreeZeroNS.leafSiblings[0],
+        associationIndex: "0", associationSiblings: assocTree.leafSiblings[0],
+        _meta: {
+            description: "Adversarial nullifierSecret=0 bypass",
+            expected: "MUST FAIL: nullifierSecret != 0 constraint"
+        }
+    };
+    fs.writeFileSync(FIXTURES + '/r0-nullifier-zero.json', stringify(r0NullifierZero));
+    console.log("Wrote r0-nullifier-zero.json");
+
+    // ===== R1 Negative: nullifierSecret=0 =====
+    const r1NullifierZero = {
+        optionCount: "5",
+        stateRoot: stateTreeZeroNS.root, associationRoot: assocTree.root,
+        electionScope: electionScope,
+        label: label, nullifierSecret: nsZero, trapdoor: td,
+        vote: "3", salt: "42",
+        stateIndex: "0", stateSiblings: stateTreeZeroNS.leafSiblings[0],
+        associationIndex: "0", associationSiblings: assocTree.leafSiblings[0],
+        _meta: {
+            description: "Adversarial nullifierSecret=0 bypass",
+            expected: "MUST FAIL: nullifierSecret != 0 constraint"
+        }
+    };
+    fs.writeFileSync(FIXTURES + '/r1-nullifier-zero.json', stringify(r1NullifierZero));
+    console.log("Wrote r1-nullifier-zero.json");
+
     console.log("\nDone. All fixtures written to", FIXTURES);
 }
 

@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# ZK-Quorum C0.4 — Groth16 development setup for BLS12-381.
+# ZK-Quorum C0 — Groth16 development setup for BLS12-381 (ONE-SHOT CEREMONY).
+#
+# WARNING: This is a ONE-SHOT trusted ceremony. Run it once, commit the
+# resulting manifests + VKs, and deliver the generated ptau/zkey files to
+# Codex for publication. Do NOT re-run for day-to-day development — use
+# `scripts/fetch-setup-assets.js` instead for reproducible gate validation.
 #
 # Generates:
-#   1. Powers of Tau phase 1 (power-14, BLS12-381) — if not already cached.
-#   2. Circuit compilation (R0/R1 R1CS + WASM).
+#   1. Powers of Tau phase 1 (power-14, BLS12-381).
+#   2. Circuit R1CS + WASM (via circom compilation).
 #   3. Groth16 zkey per circuit (R0, R1) with circuit-specific contribution.
 #   4. Verification keys (VK JSON, committed to Git).
 #   5. Manifests with SHA-256, byte sizes, commands, tool versions, ptau
@@ -13,10 +18,10 @@
 # This is a TRUSTED / NON-PRODUCTION ceremony for the hackathon.
 # Never use these artifacts in production.
 #
-# Usage: bash scripts/setup-groth16.sh
+# Usage (ONE-SHOT): bash scripts/setup-groth16.sh
 #
 # Environment:
-#   Node 22+, Circom 2.2.3 (.bootstrap/bin/circom), snarkjs 0.7.6 (repo-local).
+#   Node 24, Circom 2.2.3 (.bootstrap/bin/circom), snarkjs 0.7.6 (repo-local).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

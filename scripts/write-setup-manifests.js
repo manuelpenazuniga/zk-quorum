@@ -67,7 +67,7 @@ function buildManifest(name, rung, desc, r1csBits, zkeyBits, vkBits, info, templ
         setup_power: power,
         setup_power_justification: `2^${power} = ${powerCap} > ${info.Constraints} constraints. Minimum power that covers the constraint count.`,
         ceremony_type: 'TRUSTED_DEV_HACKATHON',
-        reproducibility_boundary: 'CIRCUIT_HASHES_ONLY__ZKEY_AND_PTAU_ARE_PER_RUN_NON_REPRODUCIBLE__VK_JSON_FILES_COMMITTED_AS_TRUTH',
+        reproducibility_boundary: 'IMMUTABLE_RELEASE_ASSETS__ZKEY_AND_PTAU_DELIVERED_VIA_IMMUTABLE_URL_WITH_SHA256_VERIFICATION__VK_JSON_FILES_COMMITTED_AS_TRUTH',
         r1cs: {
             file: 'main.r1cs',
             sha256: r1csBits.sha256,

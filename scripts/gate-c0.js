@@ -101,8 +101,11 @@ function proveAndVerify(testName, circuitName, fixtureFile, zkeyFile, vkFile, ex
     // Generate witness
     const wcRes = snarkjsCmd(['wc', wasmFile, inputJson, wtnsFile]);
     if (wcRes.error) {
-        if (!expectPass) {
+        const isOpError = !(wcRes.stderr && wcRes.stderr.length > 0);
+        if (!expectPass && !isOpError) {
             ok(testName + ' [correctly rejected at witness gen]');
+        } else if (!expectPass && isOpError) {
+            fail(testName, `operational error in witness gen: ${wcRes.message}`);
         } else {
             fail(testName, `witness gen failed: ${wcRes.stderr || wcRes.message}`);
         }
@@ -112,8 +115,11 @@ function proveAndVerify(testName, circuitName, fixtureFile, zkeyFile, vkFile, ex
     // Check constraints
     const chkRes = snarkjsCmd(['wchk', r1csFile, wtnsFile]);
     if (chkRes.error) {
-        if (!expectPass) {
+        const isOpError = !(chkRes.stderr && chkRes.stderr.length > 0);
+        if (!expectPass && !isOpError) {
             ok(testName + ' [correctly rejected at constraint check]');
+        } else if (!expectPass && isOpError) {
+            fail(testName, `operational error in constraint check: ${chkRes.message}`);
         } else {
             fail(testName, `constraint check failed: ${chkRes.stderr || chkRes.message}`);
         }
@@ -285,37 +291,79 @@ function testFrRoundTrip() {
 
     // Public signal order test
     console.log('\nPublic Signal Order Match');
-    const r0Public = loadJson(path.join(ROOT, 'tmp', 'setup', 'r0_public.json'));
-    const r0Manifest = loadJson(path.join(ROOT, 'circuits', 'artifacts', 'manifests', 'public-vote-r0.json'));
-    const r0Schema = r0Manifest.public_schema;
-    if (r0Public.length === r0Schema.total) {
-        ok(`R0 public.json has ${r0Public.length} signals (schema says ${r0Schema.total})`);
-    } else {
-        fail('R0 public.json count', `got ${r0Public.length}, expected ${r0Schema.total}`);
+    // Generate proofs on-the-fly to avoid depending on tmp/setup/*.json
+    const r0Fixture = path.join(ROOT, 'circuits', 'artifacts', 'fixtures', 'r0-vote-0.json');
+    const r1Fixture = path.join(ROOT, 'circuits', 'artifacts', 'fixtures', 'r1-vote-3-salt-42.json');
+
+    function quickProve(fixturePath, circuitName, zkeyFile, vkFile, outDir, label) {
+        const raw = loadJson(fixturePath);
+        delete raw._meta;
+        const inputJson = path.join(outDir, `fr_input.json`);
+        const wtnsFile = path.join(outDir, `fr.wtns`);
+        const proofJson = path.join(outDir, `fr_proof.json`);
+        const publicJson = path.join(outDir, `fr_public.json`);
+        saveJson(inputJson, raw);
+
+        const wasmFile = path.join(ROOT, `circuits/build/${circuitName}/main_js/main.wasm`);
+        const r1csFile = path.join(ROOT, `circuits/build/${circuitName}/main.r1cs`);
+        const zkey = path.join(ROOT, zkeyFile);
+        const vk = path.join(ROOT, vkFile);
+
+        const wcRes = snarkjsCmd(['wc', wasmFile, inputJson, wtnsFile]);
+        if (wcRes.error) {
+            fail(`Fr ${label} witness`, wcRes.stderr || wcRes.message);
+            return null;
+        }
+        const proveRes = snarkjsCmd(['g16p', zkey, wtnsFile, proofJson, publicJson]);
+        if (proveRes.error) {
+            fail(`Fr ${label} prove`, proveRes.stderr || proveRes.message);
+            return null;
+        }
+        return publicJson;
     }
-    for (const sig of r0Schema.signals) {
-        const val = r0Public[sig.index];
-        if (frIsCanonical(val)) {
-            ok(`  R0[${sig.index}] ${sig.name} canonical decimal`);
+
+    const r0PublicJson = quickProve(r0Fixture, 'public-vote',
+        'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+        path.join(ROOT, 'tmp', 'gate'), 'R0');
+    const r1PublicJson = quickProve(r1Fixture, 'commit-vote',
+        'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json',
+        path.join(ROOT, 'tmp', 'gate'), 'R1');
+
+    if (r0PublicJson) {
+        const r0Public = loadJson(r0PublicJson);
+        const r0Manifest = loadJson(path.join(ROOT, 'circuits', 'artifacts', 'manifests', 'public-vote-r0.json'));
+        const r0Schema = r0Manifest.public_schema;
+        if (r0Public.length === r0Schema.total) {
+            ok(`R0 public.json has ${r0Public.length} signals (schema says ${r0Schema.total})`);
         } else {
-            fail(`  R0[${sig.index}] ${sig.name}`, `non-canonical: ${val}`);
+            fail('R0 public.json count', `got ${r0Public.length}, expected ${r0Schema.total}`);
+        }
+        for (const sig of r0Schema.signals) {
+            const val = r0Public[sig.index];
+            if (frIsCanonical(val)) {
+                ok(`  R0[${sig.index}] ${sig.name} canonical decimal`);
+            } else {
+                fail(`  R0[${sig.index}] ${sig.name}`, `non-canonical: ${val}`);
+            }
         }
     }
 
-    const r1Public = loadJson(path.join(ROOT, 'tmp', 'setup', 'r1_public.json'));
-    const r1Manifest = loadJson(path.join(ROOT, 'circuits', 'artifacts', 'manifests', 'commit-vote-r1.json'));
-    const r1Schema = r1Manifest.public_schema;
-    if (r1Public.length === r1Schema.total) {
-        ok(`R1 public.json has ${r1Public.length} signals (schema says ${r1Schema.total})`);
-    } else {
-        fail('R1 public.json count', `got ${r1Public.length}, expected ${r1Schema.total}`);
-    }
-    for (const sig of r1Schema.signals) {
-        const val = r1Public[sig.index];
-        if (frIsCanonical(val)) {
-            ok(`  R1[${sig.index}] ${sig.name} canonical decimal`);
+    if (r1PublicJson) {
+        const r1Public = loadJson(r1PublicJson);
+        const r1Manifest = loadJson(path.join(ROOT, 'circuits', 'artifacts', 'manifests', 'commit-vote-r1.json'));
+        const r1Schema = r1Manifest.public_schema;
+        if (r1Public.length === r1Schema.total) {
+            ok(`R1 public.json has ${r1Public.length} signals (schema says ${r1Schema.total})`);
         } else {
-            fail(`  R1[${sig.index}] ${sig.name}`, `non-canonical: ${val}`);
+            fail('R1 public.json count', `got ${r1Public.length}, expected ${r1Schema.total}`);
+        }
+        for (const sig of r1Schema.signals) {
+            const val = r1Public[sig.index];
+            if (frIsCanonical(val)) {
+                ok(`  R1[${sig.index}] ${sig.name} canonical decimal`);
+            } else {
+                fail(`  R1[${sig.index}] ${sig.name}`, `non-canonical: ${val}`);
+            }
         }
     }
 }
@@ -569,6 +617,14 @@ proveAndVerify(
 );
 proveAndVerify(
     'R1 label zero', 'commit-vote', 'r1-label-zero.json',
+    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json', false
+);
+proveAndVerify(
+    'R0 nullifierSecret=0', 'public-vote', 'r0-nullifier-zero.json',
+    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', false
+);
+proveAndVerify(
+    'R1 nullifierSecret=0', 'commit-vote', 'r1-nullifier-zero.json',
     'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json', false
 );
 

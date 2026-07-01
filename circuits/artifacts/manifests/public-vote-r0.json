@@ -6,19 +6,20 @@
   "proof_system": "Groth16",
   "circom_version": "2.2.3",
   "snarkjs_version": "0.7.6",
-  "node_version": "v22.23.1",
+  "node_version": "v24.2.0",
   "depth": 10,
   "max_options": 16,
   "setup_power": 14,
-  "setup_power_justification": "2^14 = 16384 > 14453 constraints. Minimum power that covers the constraint count.",
+  "setup_power_justification": "2^14 = 16384 > 14454 constraints. Minimum power that covers the constraint count.",
   "ceremony_type": "TRUSTED_DEV_HACKATHON",
+  "reproducibility_boundary": "IMMUTABLE_RELEASE_ASSETS__ZKEY_AND_PTAU_DELIVERED_VIA_IMMUTABLE_URL_WITH_SHA256_VERIFICATION__VK_JSON_FILES_COMMITTED_AS_TRUTH",
   "r1cs": {
     "file": "main.r1cs",
-    "sha256": "19d4aa1f4a8e9871fa0def2109497d8ad66bed8053ebcb7229c10c9194b60a23",
-    "bytes": 2011948,
-    "constraints": 14453,
-    "wires": 14457,
-    "labels": 25413,
+    "sha256": "455204650f4dae22fcfabf65eb20f52924f4029f69a4d3977317e42b176055a6",
+    "bytes": 2012076,
+    "constraints": 14454,
+    "wires": 14458,
+    "labels": 25416,
     "template_instances": 77,
     "public_inputs": 5,
     "private_inputs": 25,
@@ -27,7 +28,7 @@
   "setup": {
     "ptau": {
       "file": "pot14_final.ptau",
-      "sha256": "7204f204a3d2ed53a7ff719460700768da2ac940eff3938460a2766d340bb773",
+      "sha256": "5e3e716180b5703be7c70b09f7f93d24786a89292cfcb5cef56e1be10b493668",
       "bytes": 28315678,
       "curve": "bls12-381",
       "power": 14,
@@ -37,13 +38,13 @@
     },
     "zkey": {
       "file": "r0_final.zkey",
-      "sha256": "af8d4e6e9fa6c032bad2b9d997363e8a8ffebd74be922ad49133725d7979e049",
-      "bytes": 9012962
+      "sha256": "ce99d611a6ce449cfd4a225fa0bbdca5ebf5b320944c3da37d2eeb004a7cd6c1",
+      "bytes": 9013530
     },
     "verification_key": {
       "file": "r0_vk.json",
-      "sha256": "75eeb21f8d7f9fccf9b2b5ee0d1b2af0fb147435b718a8e6b7026b1ea42124da",
-      "bytes": 5364
+      "sha256": "526e1ab8ecd69a558ff75460b0357591f3a1cfb342ccbab24076771a4c686a04",
+      "bytes": 5373
     },
     "commands": [
       "snarkjs powersoftau new bls12381 14 pot14_0000.ptau",
@@ -107,6 +108,5 @@
     "associationSiblings[10]",
     "associationIndex"
   ],
-  "timestamp": "2026-07-01T15:25:25Z",
-  "reproducibility_boundary": "CIRCUIT_HASHES_ONLY__ZKEY_AND_PTAU_ARE_PER_RUN_NON_REPRODUCIBLE__VK_JSON_FILES_COMMITTED_AS_TRUTH"
+  "timestamp": "2026-07-01T23:47:14Z"
 }

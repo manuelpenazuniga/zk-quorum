@@ -60,6 +60,8 @@ const expectedFixtures = [
     'r1-altered-scope.json',
     'r1-derived-scope.json',
     'r1-wrong-commitment.json',
+    'r0-nullifier-zero.json',
+    'r1-nullifier-zero.json',
 ];
 
 let passed = 0;

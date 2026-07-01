@@ -62,7 +62,8 @@ echo ""
 # ── Clean build artifacts ────────────────────────────────────────────────────
 echo "=== Cleaning build artifacts ==="
 rm -rf circuits/build tmp
-echo "[OK] circuits/build and tmp removed"
+mkdir -p tmp/setup tmp/gate circuits/build/public-vote circuits/build/commit-vote
+echo "[OK] build artifacts cleaned, directories recreated"
 echo ""
 
 # ── Step 1: Compile circuits ─────────────────────────────────────────────────
@@ -100,9 +101,9 @@ echo "=== Step 5: Independent Python BigInt engine ==="
 python3 scripts/verify-poseidon-bigint.py
 echo ""
 
-# ── Step 6: Groth16 setup (from clean state) ─────────────────────────────────
-echo "=== Step 6: Groth16 setup ==="
-bash scripts/setup-groth16.sh
+# ── Step 6: Fetch & verify setup assets (never regenerate) ────────────────────
+echo "=== Step 6: Fetch & verify setup assets ==="
+node scripts/fetch-setup-assets.js
 echo ""
 
 # ── Step 7: Gate C0 — proof verification, mutations, Fr round-trip ──────────

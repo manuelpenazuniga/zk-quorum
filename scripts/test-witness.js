@@ -76,7 +76,12 @@ function runWitnessCheck(testName, circuitName, fixtureFile, expectPass, expectF
                 const checkCmd = `${SNARKJS} wchk ${r1csFile} ${wtnsFile}`;
                 execSync(checkCmd, { stdio: 'pipe', cwd: ROOT, timeout: 30000 });
                 fail(testName, 'negative test: witness generated and passed constraints (should have failed)');
-            } catch (e2) {
+                } catch (e2) {
+                const isOpError2 = !(e2.status !== null || (e2.stderr && e2.stderr.length > 0));
+                if (isOpError2) {
+                    fail(testName, `operational error in constraint check: ${e2.message.slice(0,200)}`);
+                    return;
+                }
                 if (expectFailStage === 'witness') {
                     fail(testName, 'expected failure at witness generation, but witness succeeded and constraints failed');
                 } else {
@@ -90,6 +95,11 @@ function runWitnessCheck(testName, circuitName, fixtureFile, expectPass, expectF
             ok(testName);
         }
     } catch (e) {
+        const isOpError = !(e.status !== null || (e.stderr && e.stderr.length > 0));
+        if (isOpError) {
+            fail(testName, `operational error (spawn/IO/parse) — gate must fail: ${e.message.slice(0,200)}`);
+            return;
+        }
         if (expectPass) {
             fail(testName, `positive test failed: ${e.stderr ? e.stderr.toString().slice(0,200) : e.message}`);
         } else if (!expectFailStage || expectFailStage === 'witness') {
@@ -118,6 +128,7 @@ runWitnessCheck('r0-negative-wrong-root', 'public-vote', 'r0-wrong-root.json', f
 runWitnessCheck('r0-negative-zero-asp', 'public-vote', 'r0-zero-asp.json', false, 'witness');
 runWitnessCheck('r0-negative-zero-options', 'public-vote', 'r0-zero-options.json', false, 'witness');
 runWitnessCheck('r0-negative-label-zero', 'public-vote', 'r0-label-zero.json', false, 'witness');
+runWitnessCheck('r0-negative-nullifier-zero', 'public-vote', 'r0-nullifier-zero.json', false, 'witness');
 runWitnessCheck('r0-negative-options-17', 'public-vote', 'r0-options-17.json', false, 'witness');
 runWitnessCheck('r0-negative-wrong-asp-path', 'public-vote', 'r0-wrong-asp-path.json', false, 'witness');
 console.log('');
@@ -140,6 +151,7 @@ runWitnessCheck('r1-negative-zero-salt', 'commit-vote', 'r1-zero-salt.json', fal
 runWitnessCheck('r1-negative-vote-out-of-range', 'commit-vote', 'r1-vote-out-of-range.json', false, 'witness');
 runWitnessCheck('r1-negative-zero-options', 'commit-vote', 'r1-zero-options.json', false, 'witness');
 runWitnessCheck('r1-negative-label-zero', 'commit-vote', 'r1-label-zero.json', false, 'witness');
+runWitnessCheck('r1-negative-nullifier-zero', 'commit-vote', 'r1-nullifier-zero.json', false, 'witness');
 runWitnessCheck('r1-negative-options-17', 'commit-vote', 'r1-options-17.json', false, 'witness');
 runWitnessCheck('r1-negative-wrong-asp-path', 'commit-vote', 'r1-wrong-asp-path.json', false, 'witness');
 runWitnessCheck('r1-derived-scope', 'commit-vote', 'r1-derived-scope.json', true, null);
