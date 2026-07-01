@@ -136,4 +136,3 @@ async function main(): Promise<number> {
 export async function runCLI(): Promise<number> {
   return main();
 }
-

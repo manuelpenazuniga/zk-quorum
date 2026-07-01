@@ -76,7 +76,7 @@ describe("auditor CLI entrypoint guard", () => {
     const pkgContent = readFileSync(resolve("package.json"), "utf8");
     const pkg = JSON.parse(pkgContent);
     const binPath = resolve(pkg.bin["zkq-auditor"]);
-    
+
     // Test direct shebang execution since we did chmod +x
     const outDirect = execFileSync(binPath, ["--help"], {
       encoding: "utf8",
@@ -92,5 +92,35 @@ describe("auditor CLI entrypoint guard", () => {
     });
     expect(outNode).toContain("Usage: zkq-auditor");
     expect(outNode).toContain("--bundle");
+  });
+
+  it("propagates non-zero exit code on invalid arguments/command", () => {
+    const pkgContent = readFileSync(resolve("package.json"), "utf8");
+    const pkg = JSON.parse(pkgContent);
+    const binPath = resolve(pkg.bin["zkq-auditor"]);
+
+    try {
+      execFileSync(process.execPath, [binPath, "invalid-cmd"], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      throw new Error("Expected command to fail");
+    } catch (e: any) {
+      expect(e.status).toBe(2);
+    }
+  });
+
+  it("propagates non-zero exit code on missing bundle option", () => {
+    const pkgContent = readFileSync(resolve("package.json"), "utf8");
+    const pkg = JSON.parse(pkgContent);
+    const binPath = resolve(pkg.bin["zkq-auditor"]);
+
+    try {
+      execFileSync(process.execPath, [binPath, "verify"], {
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      throw new Error("Expected command to fail");
+    } catch (e: any) {
+      expect(e.status).toBe(2);
+    }
   });
 });

@@ -1,30 +1,35 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { argv, env, exit } from "node:process";
+import { argv, exit, stderr } from "node:process";
 
-if (env.ZK_AUDITOR_RUNNING_WITH_TSX === "true") {
-  // Dynamically import the TS entrypoint (since tsx is imported)
-  const cli = await import("../src/cli.ts");
-  const exitCode = await cli.runCLI();
-  exit(exitCode);
-} else {
-  const currentFilePath = fileURLToPath(import.meta.url);
-  const nodeBinary = argv[0] ?? "node";
-  const args = [
-    "--import",
-    "tsx",
-    currentFilePath,
-    ...argv.slice(2)
-  ];
+const nodeBinary = argv[0] ?? "node";
+const runCliPath = fileURLToPath(new URL("./run-cli.js", import.meta.url));
 
-  const result = spawnSync(nodeBinary, args, {
-    stdio: "inherit",
-    env: {
-      ...env,
-      ZK_AUDITOR_RUNNING_WITH_TSX: "true"
-    }
-  });
+const args = [
+  "--import",
+  "tsx",
+  runCliPath,
+  ...argv.slice(2)
+];
 
-  exit(result.status ?? 0);
+const result = spawnSync(nodeBinary, args, {
+  stdio: "inherit"
+});
+
+if (result.error) {
+  stderr.write(`Spawn error: ${result.error.message}\n`);
+  exit(255);
 }
+
+if (result.signal !== null) {
+  stderr.write(`Spawn terminated by signal: ${result.signal}\n`);
+  exit(255);
+}
+
+if (result.status === null) {
+  stderr.write(`Spawn exit status is null\n`);
+  exit(255);
+}
+
+exit(result.status);
