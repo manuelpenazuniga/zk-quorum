@@ -91,10 +91,13 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 - Codex: planifica, escribe briefs, revisa evidencia y decide gates; no escribe
   código de producción.
-- OpenCode Go: implementación pesada con DeepSeek V4 Pro, Kimi K2.7 Code,
-  MiniMax M3 y MiniMax M2.7.
-- `agy`: Gemini 3.5 Flash Medium/High para trabajo ligero y auditoría;
-  Gemini 3.1 Pro High para security/soundness. No usar Low.
+- OpenCode Go: implementación con DeepSeek V4 Pro, MiniMax M3 y MiniMax M2.7.
+- Kimi K2.7 Code está deshabilitado por defecto; sólo emergencia con
+  autorización explícita del usuario por tarea.
+- `agy`: Gemini 3.5 Flash Medium/High para trabajo ligero; Gemini 3.1 Pro High
+  es el auditor primario. No usar Low.
+- `opencode-go/qwen3.7-plus`: fallback de auditoría read-only. No usar Qwen
+  3.7 Max.
 - GPT-5.5 high por Codex CLI: auditoría premium C1/A0 y cualquier hito con
   fondos.
 - Qwen 3.7 Max y GLM-5.2 están retirados por costo, no por calidad.

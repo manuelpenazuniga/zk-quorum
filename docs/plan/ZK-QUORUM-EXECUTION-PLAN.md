@@ -837,6 +837,7 @@ opencode-go/deepseek-v4-pro
 opencode-go/kimi-k2.7-code
 opencode-go/minimax-m3
 opencode-go/minimax-m2.7
+opencode-go/qwen3.7-plus
 ```
 
 Modelos confirmados por `agy models`:
@@ -854,11 +855,12 @@ read-only. Las variantes Low de Antigravity están prohibidas.
 |---|---|---|
 | Codex, esta sesión | plan, briefs, revisión y decisión de gate | no escribe código de producción |
 | DeepSeek V4 Pro | circuitos, Rust/Soroban, integración ZK y debug fino | OpenCode escaso; reservar para implementación pesada |
-| Kimi K2.7 Code | implementación multiarchivo excepcional | costo observado alto; una sesión acotada, acceptance cerrado y revisión explícita de presupuesto |
+| Kimi K2.7 Code | deshabilitado por defecto | objetivo casi cero; sólo emergencia con autorización explícita del usuario para la tarea |
 | MiniMax M3 | producto, relayer, web, scripts y CI | driver principal de producto |
 | MiniMax M2.7 | tests, fixtures, codemods y overflow | trabajo mecánico acotado |
-| Gemini 3.5 Flash Medium/High | worker ligero y auditoría amplia | descargar trabajo no crítico desde OpenCode |
-| Gemini 3.1 Pro High | auditoría security/soundness y arquitectura | auditor independiente |
+| Gemini 3.5 Flash Medium/High | worker ligero y preflight | no decide gates finales |
+| Gemini 3.1 Pro High | auditoría primaria de producto/security/soundness/release | auditor independiente preferido |
+| Qwen 3.7 Plus | fallback read-only de auditoría | usar `opencode-go/qwen3.7-plus`; nunca Max |
 | GPT-5.5 high | audit premium C1/A0 y cualquier hito con fondos | sólo sobre commits estabilizados |
 
 ### 11.2 Topología: tres lanes y auditoría independiente
@@ -867,14 +869,14 @@ No se crearán diez worktrees. La coordinación se mantiene acotada:
 
 ```text
 main/integration
-├── wt/crypto       DeepSeek V4 Pro; Kimi sólo por excepción presupuestada
-├── wt/contract     DeepSeek V4 Pro; Kimi sólo por excepción presupuestada
-└── wt/product      MiniMax M3 / MiniMax M2.7; Kimi sólo por excepción
+├── wt/crypto       DeepSeek V4 Pro
+├── wt/contract     DeepSeek V4 Pro
+└── wt/product      MiniMax M3 / MiniMax M2.7
 
 auditorías read-only:
 ├── Codex: revisión continua y gate
-├── Gemini 3.5 Flash High: producto/release
-├── Gemini 3.1 Pro High: security/soundness
+├── Gemini 3.1 Pro High: auditor primario de todos los gates
+├── Qwen 3.7 Plus: fallback read-only
 └── GPT-5.5 high: C1/A0 premium
 ```
 
@@ -942,21 +944,23 @@ No se acepta “done” sin tests o evidencia explícita de por qué no aplican.
 ### 11.5 Reglas de escalamiento
 
 - M3 encuentra un problema ZK/Rust no mecánico: escala inmediatamente a V4 Pro.
-- M3 falla una vez por comprensión multiarchivo: entrega diagnóstico; se
-  reintenta con M3/M2.7 o se autoriza una única sesión Kimi después de revisar
-  presupuesto.
+- M3 falla una vez por comprensión multiarchivo: entrega diagnóstico y se
+  replanifica con M3/M2.7 o DeepSeek según dominio.
 - V4 Pro no está disponible por cuota/billing: el lane se replanifica o espera
   cuota. Kimi no es fallback automático.
-- Kimi recibe sólo briefs cerrados, una sesión simultánea como máximo y se
-  detiene si entra en diagnóstico iterativo sin converger.
+- Kimi queda deshabilitado. Sólo puede abrirse si el usuario autoriza
+  explícitamente una emergencia concreta; una sesión máxima y stop inmediato
+  si entra en diagnóstico iterativo.
 - M2.7 falla una vez por contexto: escala a M3.
-- `agy` Medium hace trabajo ligero; sólo High participa en un gate.
-- Fallback `agy`: Flash Medium → Flash High → Gemini 3.1 Pro High. Si Pro High
-  no está disponible, C1/A0/fondos escalan a GPT-5.5 high; otros gates se
-  bloquean y no degradan a Low.
+- `agy` Flash Medium/High hace trabajo ligero y preflight. Gemini 3.1 Pro High
+  decide el gate.
+- Fallback de auditoría: Gemini 3.1 Pro High →
+  `opencode-go/qwen3.7-plus` read-only. Si ambos fallan, C1/A0/fondos escalan a
+  GPT-5.5 high; otros gates se bloquean. Nunca se degrada a Low.
 - Un auditor no corrige el mismo diff que audita.
 - Codex escribe planes/briefs y decide gates, pero no código de producción.
-- Qwen 3.7 Max y GLM-5.2 no se invocan.
+- Qwen 3.7 Max y GLM-5.2 no se invocan. Qwen 3.7 Plus se permite sólo como
+  auditor read-only fallback.
 - Hallazgo Critical/High bloquea merge/release.
 - Divergencia entre auditores se resuelve con reproducción, no por votación.
 
@@ -1012,6 +1016,20 @@ agy \
   --print-timeout 900s \
   -p "Auditoría estrictamente read-only del commit exacto..."
 ```
+
+Fallback de auditoría, sólo si Gemini 3.1 Pro High no está disponible o
+rechaza:
+
+```bash
+opencode run \
+  --agent plan \
+  --model opencode-go/qwen3.7-plus \
+  --title zkq-audit-TASK_ID \
+  "Auditoría read-only del commit exacto; no edites; reporta archivo:línea..."
+```
+
+Qwen 3.7 Plus no implementa ni corrige su propio finding. Qwen 3.7 Max está
+prohibido.
 
 El worker usa un worktree aislado y necesita
 `--dangerously-skip-permissions` porque print mode no puede aprobar writes de
@@ -1300,7 +1318,7 @@ Si el cierre es temprano el 2 de julio, las tareas de entrega se adelantan al 1 
 | U0.2 | Web admin/voter/audit | M3 + V4 integración prover | E0/T0/U-Pre | browser flow |
 | L0.1 | Load harness | M3 | T0/L-Pre | 1→500 metrics |
 | A0.1 | Security/soundness audit | Gemini 3.1 Pro High | R1/U0/L0 | findings |
-| A0.2 | Product/release audit | Gemini 3.5 Flash High | R1/U0/L0 | findings |
+| A0.2 | Product/release audit | Gemini 3.1 Pro High; Qwen 3.7 Plus fallback | R1/U0/L0 | findings |
 | A0.3 | Premium verifier/final audit | GPT-5.5 high | A0.1/A0.2 | cero Critical/High |
 | S0.1 | Docs/evidence/video | M3 + integrador | A0 | submission ready |
 
@@ -1539,8 +1557,9 @@ El proyecto está terminado cuando:
 8. TTL y archivo están documentados y probados proporcionalmente.
 9. Frontend prueba localmente y usa relayer.
 10. La carga de 500 tiene evidencia o el claim se retira.
-11. Gemini 3.1 Pro High, Gemini 3.5 Flash High y GPT-5.5 high no tienen
-    Critical/High abiertos sobre los commits finales.
+11. Gemini 3.1 Pro High y GPT-5.5 high no tienen Critical/High abiertos sobre
+    los commits finales; si Pro no está disponible, Qwen 3.7 Plus cubre el
+    gate read-only como fallback.
 12. README/video/submission solo contienen hechos demostrados.
 
 ---
@@ -1623,7 +1642,7 @@ Estado registrado al cerrar la auditoría histórica del plan:
 | D-010 | Proofs fuera de storage, hashes en eventos y archivo content-addressed | costo + auditoría histórica | arquitectura/auditoría |
 | D-011 | Tres implementation lanes | minimizar coordinación | integrador |
 | D-012 | Auditores externos operan read-only y no corrigen su propio diff | independencia del gate | usuario |
-| D-013 | Qwen 3.7 Max y GLM-5.2 retirados; OpenCode Go sólo implementa; `agy` + GPT-5.5 high auditan | costo operacional observado | usuario |
+| D-013 | Qwen 3.7 Max y GLM-5.2 retirados; Kimi casi cero; Gemini 3.1 Pro High audita, Qwen 3.7 Plus es fallback y GPT-5.5 high queda premium | costo operacional observado | usuario |
 
 ---
 
@@ -1708,6 +1727,7 @@ opencode-go/minimax-m3
 opencode-go/minimax-m2.7
 opencode-go/deepseek-v4-pro
 opencode-go/kimi-k2.7-code
+opencode-go/qwen3.7-plus
 Gemini 3.5 Flash (Medium)
 Gemini 3.5 Flash (High)
 Gemini 3.1 Pro (High)
@@ -1722,11 +1742,12 @@ plan
 ```
 
 `explore` y `general` están configurados como subagents; invocarlos directamente
-con `opencode run --agent explore` hace fallback a `build`. OpenCode Go queda
-restringido a implementación; los auditores vigentes usan
-`agy --add-dir <path-absoluto>` sin permisos de escritura o Codex CLI
-`--sandbox read-only`. El `--sandbox` de `agy 1.0.14` permanece suspendido por
-el bug de cwd documentado en el ledger.
+con `opencode run --agent explore` hace fallback a `build`. OpenCode Go se usa
+para implementación salvo la excepción read-only
+`opencode-go/qwen3.7-plus`, que es fallback de auditoría. Los auditores
+primarios usan `agy --add-dir <path-absoluto>` sin permisos de escritura;
+Codex CLI usa `--sandbox read-only`. El `--sandbox` de `agy 1.0.14` permanece
+suspendido por el bug de cwd documentado en el ledger.
 
 ### A.5 Auditorías iniciales OpenCode — registro histórico
 

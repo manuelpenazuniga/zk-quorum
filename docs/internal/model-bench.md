@@ -1,6 +1,6 @@
-# Routing multiagente v3 — costo/beneficio operativo
+# Routing multiagente v4 — costo/beneficio operativo
 
-**Vigente desde:** 2026-06-30
+**Vigente desde:** 2026-07-01
 
 **Ámbito:** ZK-Quorum y referencia para repos Rust/Web3
 **Autoridad específica de ZK-Quorum:** `docs/plan/ZK-QUORUM-EXECUTION-PLAN.md`
@@ -11,6 +11,12 @@ Qwen 3.7 Max y GLM-5.2 quedan retirados del routing. La causa es costo
 operacional observado —una cuenta consumida en un día—, no una evaluación
 negativa de su calidad. No se usan como implementación, auditoría, fallback ni
 desempate.
+
+Qwen 3.7 Plus es un modelo distinto y queda autorizado exclusivamente como
+fallback de auditoría read-only cuando Gemini 3.1 Pro High no esté disponible
+o rechace la tarea. Kimi K2.7 Code queda deshabilitado por defecto: su objetivo
+de consumo es casi cero y requiere autorización explícita del usuario por
+emergencia.
 
 Todos los modelos OpenCode se invocan exclusivamente mediante el provider
 `opencode-go`. No se usa OpenCode Zen ni IDs `opencode/...`.
@@ -26,17 +32,18 @@ La arquitectura vigente separa cuatro funciones:
 
 ## 2. Inventario verificado localmente
 
-Comprobado el 2026-06-30 con `opencode models opencode-go`:
+Comprobado nuevamente el 2026-07-01 con `opencode models opencode-go`:
 
 ```text
 opencode-go/deepseek-v4-pro
 opencode-go/kimi-k2.7-code
 opencode-go/minimax-m3
 opencode-go/minimax-m2.7
+opencode-go/qwen3.7-plus
 ```
 
-OpenCode Go también publica otros modelos, pero no pertenecen al router
-congelado de ZK-Quorum.
+OpenCode Go también publica `opencode-go/qwen3.7-max`; queda expresamente
+prohibido. `opencode-go/qwen3.7-plus` sólo audita y nunca implementa.
 
 Comprobado con `agy models`:
 
@@ -62,19 +69,19 @@ resultado: GPT-5.5 HIGH CLI AVAILABLE
 
 | Modelo | Primario | Fallback permitido | No asignar |
 |---|---|---|---|
-| DeepSeek V4 Pro | Circom, primitivas ZK, Rust/Soroban, bugs de soundness y serialización | Kimi K2.7 Code cuando V4 Pro no esté disponible | docs rutinarias, auditoría final |
-| Kimi K2.7 Code | implementación multiarchivo compleja, integración contract/prover, remediación precisa con tests | DeepSeek V4 Pro para ZK/Rust fino; M3 para producto | auditoría de su propio código |
-| MiniMax M3 | TypeScript/Node, relayer, web, scripts, CI, integración de producto | Kimi K2.7 Code si el cambio cruza varias capas difíciles | decisión de gate |
+| DeepSeek V4 Pro | Circom, primitivas ZK, Rust/Soroban, bugs de soundness y serialización | esperar cuota o replanificar | docs rutinarias, auditoría final |
+| Kimi K2.7 Code | deshabilitado por defecto | sólo emergencia autorizada explícitamente por el usuario | routing automático, auditoría, trabajo rutinario |
+| MiniMax M3 | TypeScript/Node, relayer, web, scripts, CI, integración de producto | MiniMax M2.7 para partes mecánicas; replanificar lo complejo | decisión de gate |
 | MiniMax M2.7 | tests mecánicos, fixtures, codemods y overflow de M3 | M3 si falla una vez por comprensión del sistema | criptografía o contrato crítico |
 
 Distribución inicial de la cuota OpenCode, ajustable por carga real:
 
 | Pool | Objetivo |
 |---|---:|
-| MiniMax M3 | 35–45% |
-| DeepSeek V4 Pro | 25–35% |
-| Kimi K2.7 Code | 10–20% |
-| MiniMax M2.7 | 10–15% |
+| DeepSeek V4 Pro | 35–50% |
+| MiniMax M3 | 30–40% |
+| MiniMax M2.7 | 15–25% |
+| Kimi K2.7 Code | 0% por defecto; excepción explícita fuera del presupuesto normal |
 
 Los porcentajes son límites de routing, no garantías del proveedor. La métrica
 de valor es:
@@ -90,25 +97,26 @@ No se optimiza por cantidad de texto ni por número de archivos modificados.
 | Modelo | Uso |
 |---|---|
 | Gemini 3.5 Flash Medium | inventario, clasificación, lectura cruzada, actualización de tests no críticos y verificación documental |
-| Gemini 3.5 Flash High | auditoría amplia de producto, CI, release, privacidad operacional y coherencia de evidencias |
-| Gemini 3.1 Pro High | auditoría de arquitectura, security/soundness, ZK/Soroban y arbitraje técnico basado en reproducción |
+| Gemini 3.5 Flash High | preflight, revisión documental y trabajo ligero; no decide el gate final |
+| Gemini 3.1 Pro High | auditor primario de producto, arquitectura, security/soundness, ZK/Soroban y release |
 
 Reglas:
 
 1. `agy` puede implementar sólo trabajo ligero claramente delimitado.
 2. Un auditor `agy` no corrige el mismo diff que audita.
-3. Medium no emite el gate final de crypto/contract.
-4. High debe clasificar Critical/High/Medium/Low y adjuntar evidencia
+3. Flash Medium/High no emite el gate final; el gate usa Gemini 3.1 Pro High.
+4. Pro High debe clasificar Critical/High/Medium/Low y adjuntar evidencia
    reproducible.
 5. Low no se usa.
 
 Fallbacks:
 
 ```text
-Flash Medium no disponible -> Flash High
-Flash High no disponible   -> Gemini 3.1 Pro High
-Pro High no disponible     -> GPT-5.5 high sólo para C1/A0/fondos;
-                              en cualquier otro gate, queda bloqueado
+Gemini 3.1 Pro High no disponible/rechaza
+  -> opencode-go/qwen3.7-plus read-only
+Qwen 3.7 Plus no disponible
+  -> GPT-5.5 high sólo para C1/A0/fondos;
+     en cualquier otro gate, queda bloqueado
 ```
 
 No se degrada a Low para mantener throughput.
@@ -190,6 +198,19 @@ agy \
   -p "<auditoría estrictamente read-only del commit exacto>"
 ```
 
+Fallback read-only cuando Gemini 3.1 Pro High no esté disponible o rechace:
+
+```bash
+opencode run \
+  --agent plan \
+  --model opencode-go/qwen3.7-plus \
+  --title zkq-audit-TASK_ID \
+  "<brief read-only; commit exacto; findings con archivo:línea; no editar>"
+```
+
+Codex compara `git status` y `git diff` antes/después. Qwen 3.7 Plus no recibe
+permisos de implementación y nunca se sustituye por Qwen 3.7 Max.
+
 Comprobado con `agy 1.0.14`:
 
 - `-p`, `--print` y `--prompt` son alias de print mode;
@@ -219,18 +240,20 @@ trabajo ligero
 implementación producto
   -> MiniMax M3
   -> MiniMax M2.7 para correcciones mecánicas
-  -> Kimi K2.7 Code sólo con brief cerrado y revisión explícita de presupuesto
+  -> sin Kimi por defecto
 
 implementación Rust/ZK
   -> DeepSeek V4 Pro
   -> esperar cuota o replanificar si V4 no está disponible
-  -> Kimi K2.7 Code sólo por excepción y una sesión acotada
+  -> Kimi sólo con autorización explícita del usuario para una emergencia
 
 auditoría general
-  -> Gemini 3.5 Flash High
+  -> Gemini 3.1 Pro High
+  -> Qwen 3.7 Plus read-only como fallback
 
 auditoría security/soundness
   -> Gemini 3.1 Pro High
+  -> Qwen 3.7 Plus read-only como fallback
 
 gate crítico C1/A0 o fondos
   -> Codex revisa evidencia

@@ -84,13 +84,18 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 ## Routing vigente
 
 - Codex: plan, briefs, revisión y gates; no escribe código de producción.
-- OpenCode Go implementa: DeepSeek V4 Pro y Kimi K2.7 Code para ZK/Rust e
-  integración compleja; MiniMax M3 para producto; MiniMax M2.7 para tests y
-  trabajo mecánico.
-- `agy` audita y hace trabajo ligero: Gemini 3.5 Flash Medium/High y Gemini
-  3.1 Pro High. No usar variantes Low.
+- OpenCode Go implementa: DeepSeek V4 Pro para ZK/Rust, MiniMax M3 para
+  producto y MiniMax M2.7 para tests/trabajo mecánico.
+- Kimi K2.7 Code está deshabilitado por defecto (objetivo de uso: casi cero).
+  Sólo puede abrirse por emergencia y con autorización explícita del usuario
+  para la tarea concreta.
+- Auditor primario: `agy` con Gemini 3.1 Pro High. Gemini 3.5 Flash
+  Medium/High queda para trabajo ligero y preflight, no para el gate final.
+- Fallback de auditoría: `opencode-go/qwen3.7-plus`, estrictamente read-only.
+  No usar Qwen 3.7 Max.
 - GPT-5.5 high por Codex CLI: audit premium C1/A0 y cualquier hito con fondos.
-- Qwen 3.7 Max y GLM-5.2 están retirados por costo, no por calidad.
+- Qwen 3.7 Max y GLM-5.2 están retirados por costo, no por calidad. Qwen 3.7
+  Plus sí está autorizado sólo para auditoría fallback.
 - Todos los modelos OpenCode deben usar IDs `opencode-go/...`; no OpenCode Zen.
 
 P1 y foundation están cerrados. Antes de integrar una lane deben estar verdes

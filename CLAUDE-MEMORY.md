@@ -12,6 +12,11 @@
 - Prefiere distribución costo-beneficio:
   OpenCode Go sólo para implementación pesada; `agy` para trabajo ligero y
   auditoría; GPT-5.5 high para audit premium.
+- Kimi K2.7 Code debe permanecer casi en cero: deshabilitado por defecto y
+  sólo utilizable con autorización explícita del usuario para una emergencia
+  concreta.
+- Gemini 3.1 Pro High es el auditor primario. Qwen 3.7 Plus puede usarse como
+  fallback read-only; Qwen 3.7 Max no se usa.
 - Codex planifica, escribe briefs, audita gates y no escribe código de
   producción.
 - Qwen 3.7 Max y GLM-5.2 fueron retirados el 2026-06-30 por costo, no por
@@ -88,9 +93,11 @@ Continuar con worktrees existentes y routing vigente:
 
 1. Gemini 3.1 Pro High re-audita C0 `3c0755e`; GPT-5.5 high revisa sólo si
    aparece un hallazgo crítico o al cerrar A0;
-2. DeepSeek V4 Pro o Kimi K2.7 Code por OpenCode Go cierra C1;
+2. DeepSeek V4 Pro por OpenCode Go cierra C1; Kimi no participa salvo nueva
+   autorización explícita del usuario;
 3. MiniMax M3 por OpenCode Go cierra U0; M2.7 sólo absorbe tests mecánicos;
-4. `agy` High audita cada commit final read-only;
+4. Gemini 3.1 Pro High audita cada commit final read-only; Qwen 3.7 Plus es
+   fallback;
 5. GPT-5.5 high audita C1/A0;
 6. Codex repite evidencia, decide el gate y sólo entonces integra.
 

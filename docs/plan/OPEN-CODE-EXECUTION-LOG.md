@@ -1334,3 +1334,88 @@ No existe actualmente un `.ptau` del proyecto en el worktree. El worker debe
 generar uno mediante procedimiento de desarrollo explícito y verificable o
 detenerse como bloqueado; no puede descargar ni aceptar un artefacto sin
 checksum fijado.
+
+## 20. Routing v4 y freeze de costo Kimi — 2026-07-01
+
+El usuario reportó que el consumo diario de Kimi K2.7 Code fue
+aproximadamente tres veces el de DeepSeek V4 Pro pese a que DeepSeek ejecutó
+más trabajo. La política cambia de “excepción presupuestada” a:
+
+```text
+Kimi K2.7 Code:
+  estado:      DESHABILITADO POR DEFECTO
+  objetivo:    consumo casi cero
+  uso futuro:  sólo emergencia concreta con autorización explícita del usuario
+  automático:  prohibido como fallback de M3, M2.7 o DeepSeek
+```
+
+Verificación de procesos:
+
+```text
+ps ... | rg 'opencode.*kimi-k2.7-code'
+resultado: sin procesos Kimi activos
+```
+
+Uso histórico de Kimi durante esta ejecución:
+
+1. C1, remediación de `e3fafab`: detenida por costo y falta de convergencia;
+   no produjo commit integrable.
+2. U0, follow-up de `b43107f`: terminó en `6c83b51`; no se abrirán nuevas
+   sesiones Kimi para corregirlo o auditarlo.
+
+Nuevo routing:
+
+```text
+implementación ZK/Rust:       DeepSeek V4 Pro
+implementación producto:      MiniMax M3
+tests/cambios mecánicos:      MiniMax M2.7
+worker ligero:                Gemini 3.5 Flash Medium/High por agy
+auditor primario:             Gemini 3.1 Pro High por agy
+fallback auditor read-only:   Qwen 3.7 Plus por OpenCode Go
+auditor premium:              GPT-5.5 high para C1/A0/fondos
+```
+
+Catálogo comprobado el 2026-07-01:
+
+```text
+opencode-go/qwen3.7-plus  DISPONIBLE
+opencode-go/qwen3.7-max   DISPONIBLE PERO PROHIBIDO
+```
+
+Qwen 3.7 Plus sólo puede auditar en modo read-only cuando Gemini 3.1 Pro High
+no esté disponible o rechace la tarea. No implementa y no corrige sus propios
+findings. Qwen 3.7 Max permanece retirado.
+
+La auditoría U0 previa de Gemini 3.5 Flash High encontró cero Critical/High y
+un Medium —`bin` apuntaba a `dist/cli.js` inexistente—. Bajo routing v4 ese
+resultado es preflight, no gate final. Tras corregir el Medium, U0 debe recibir
+una auditoría nueva de Gemini 3.1 Pro High; sólo si Pro falla se usa Qwen 3.7
+Plus.
+
+### 20.1 Auditoría del routing v4
+
+Gemini 3.1 Pro High auditó read-only el diff de routing completo:
+
+```text
+scope:
+  AGENTS.md
+  CLAUDE.md
+  CLAUDE-MEMORY.md
+  docs/internal/model-bench.md
+  docs/plan/ZK-QUORUM-EXECUTION-PLAN.md
+  docs/plan/OPEN-CODE-EXECUTION-LOG.md
+Critical: 0
+High:     0
+Medium:   0
+Low:      0
+VEREDICTO: PASA
+```
+
+La revisión confirmó:
+
+- Kimi 0% por defecto y sin fallback automático;
+- Gemini 3.1 Pro High como auditor primario;
+- ID exacto `opencode-go/qwen3.7-plus` como fallback read-only;
+- Qwen 3.7 Max prohibido;
+- Flash Medium/High limitado a worker/preflight;
+- GPT-5.5 high reservado para el gate premium.
