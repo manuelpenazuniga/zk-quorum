@@ -1559,3 +1559,44 @@ verifier importado. C1 queda `IMPLEMENTADO, NO AUDITADO, NO INTEGRADO`.
 Siguiente paso único: auditoría read-only Gemini 3.1 Pro High del delta
 `e3fafab..3dd2304`. No se abre GPT-5.5 ni otro auditor mientras ese gate
 primario no termine.
+
+### 21.1 C1 auditado e integrado
+
+Gemini 3.1 Pro High auditó read-only el delta `e3fafab..3dd2304`, inspeccionó
+el estado resultante y reprodujo `scripts/build-verifier-first.sh`:
+
+```text
+Critical: 0
+High:     0
+Medium:   0
+Low:      0
+tests:    78/78, 0 ignored
+clippy:   PASS con -D warnings
+WASM:     PASS
+VEREDICTO: PASA
+```
+
+No se abrió un segundo auditor ni GPT-5.5: el audit primario no produjo
+hallazgos o desacuerdos que justificaran duplicar contexto antes del checkpoint
+premium.
+
+Integración mecánica:
+
+```text
+7a681f0 feat(contract): close C1 gate — canonical Fr, checked arithmetic, verifier-first
+6daf7a5 feat(contract): finalize C1 — root cause fix, cleanup, regressions, verifier-first build
+```
+
+El gate se repitió sobre `main` después del cherry-pick:
+
+```text
+tests: 78/78, 0 ignored
+groth16_verifier.wasm:
+  d6f6bb12d2e8f88ab34b076ef8800c8ea53c0e504ea8c85269b6cb6b75fa94ab
+zk_quorum.wasm:
+  b9c6b42bafd7f1fe5b01884593793b804d0a88ed6be01eabab94c34fa0508c30
+All gates: PASS
+```
+
+C1 queda `APROBADO E INTEGRADO`. La ruta crítica vuelve a C0: publicación
+inmutable de ptau/zkey, remediación de los findings y nueva auditoría primaria.

@@ -72,13 +72,13 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 
 ## Estado actualizado 2026-07-01
 
-- `main` termina en `87f7817`; contiene plan, foundation y producto U0.
+- `main` contiene plan, foundation, producto U0 y contrato C1.
 - Toolchain fijado: Node 24, Rust/Cargo 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y target `wasm32v1-none`.
 - Producto U0 fue auditado por Gemini 3.1 Pro High e integrado; 236 tests
   pasan. U-Pre con prover real en navegador sigue pendiente.
-- `agent/contract` termina limpio en `3dd2304`; 78 tests, clippy estricto,
-  WASM y verifier-first pasan. Falta auditoría vigente e integración.
+- C1 `3dd2304` fue auditado por Gemini 3.1 Pro High sin findings e integrado
+  como `7a681f0` + `6daf7a5`. En `main` pasan 78/78, clippy y WASM.
 - `agent/crypto` termina en `0a71316`; C0 fue rechazado con 1 Critical, 3 High,
   1 Medium y 1 Low. Los ptau/zkey autoritativos deben publicarse como assets
   inmutables con URL y SHA-256. La autenticación GitHub observada era inválida.
@@ -89,11 +89,9 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 
 Continuar secuencialmente con worktrees existentes y routing vigente:
 
-1. Gemini 3.1 Pro High audita el delta C1 `e3fafab..3dd2304`;
-2. remediar findings o integrar C1 si queda sin Critical/High;
-3. restablecer publicación de assets C0 y remediar `0a71316`;
-4. integrar C0 y ejecutar E0 local;
-5. cerrar U-Pre, testnet, R1, carga, A0 y submission.
+1. restablecer publicación de assets C0 y remediar `0a71316`;
+2. integrar C0 y ejecutar E0 local;
+3. cerrar U-Pre, testnet, R1, carga, A0 y submission.
 
 Detalles y acceptance tests:
 `docs/plan/OPEN-CODE-EXECUTION-LOG.md`.

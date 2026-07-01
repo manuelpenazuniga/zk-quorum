@@ -68,14 +68,14 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 ## Estado real
 
-- `main` termina en `87f7817`; contiene plan, foundation y producto U0.
+- `main` contiene plan, foundation, producto U0 y contrato C1.
 - Foundation reproducible: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y `wasm32v1-none`.
 - Worktrees aislados: `agent/crypto`, `agent/contract` y `agent/product`.
 - Producto U0 fue auditado por Gemini 3.1 Pro High e integrado con 236 tests.
   U-Pre con prover real en navegador sigue pendiente.
-- Contrato termina en `3dd2304`: 78 tests, clippy estricto y build
-  verifier-first pasan. Falta audit vigente e integración.
+- C1 `3dd2304` fue auditado por Gemini 3.1 Pro High con cero findings e
+  integrado como `7a681f0` + `6daf7a5`. El gate verifier-first pasa en `main`.
 - Crypto termina en `0a71316`, pero Gemini 3.1 Pro High rechazó C0 con un
   Critical, tres High, un Medium y un Low. Falta distribución inmutable de
   ptau/zkey por URL + SHA-256 y remediar los otros findings.
@@ -106,6 +106,6 @@ completos fuera del chat, audits incrementales y audit integral en A0.
 
 ## Gate actual
 
-P1/foundation están cerrados; C1 espera audit; C0 está bloqueado; U0 está
-integrado pero U-Pre pendiente. No integrar con Critical/High, tests ignorados,
-mocks aceptantes, scripts sin versionar o toolchain fuera de pin.
+P1/foundation/C1 están cerrados; C0 está bloqueado; U0 está integrado pero
+U-Pre pendiente. No integrar con Critical/High, tests ignorados, mocks
+aceptantes, scripts sin versionar o toolchain fuera de pin.

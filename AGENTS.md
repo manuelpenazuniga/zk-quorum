@@ -68,14 +68,13 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 ## Estado real
 
-- `main` termina en `87f7817`; plan, foundation y producto U0 están
-  versionados.
+- `main` contiene plan, foundation, producto U0 y contrato C1.
 - Toolchain: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6, Stellar CLI 27
   y `wasm32v1-none`.
 - Producto U0 fue auditado por Gemini 3.1 Pro High e integrado con 236 tests.
   El gate completo aún requiere U-Pre con prover real en navegador.
-- `agent/contract` termina en `3dd2304`: 78 tests, clippy estricto y build
-  verifier-first pasan. Falta audit vigente e integración.
+- C1 `3dd2304` fue auditado por Gemini 3.1 Pro High con cero findings e
+  integrado como `7a681f0` + `6daf7a5`. El gate verifier-first pasa en `main`.
 - `agent/crypto` termina en `0a71316`, pero C0 fue rechazado: faltan assets
   ptau/zkey inmutables recuperables por URL + SHA-256 y hay tres High
   adicionales. No es integrable.
@@ -106,6 +105,6 @@ Aplicar `docs/internal/agent-context-protocol.md`: commits estabilizados antes
 de auditar, un auditor por commit, salida visible menor a 800 tokens, logs
 completos fuera del chat, audits incrementales y audit integral en A0.
 
-P1 y foundation están cerrados. C1 espera audit; C0 está bloqueado; U0 está
-integrado pero U-Pre pendiente. Antes de integrar una lane deben estar verdes
-sus tests y las auditorías vigentes sin Critical/High.
+P1, foundation y C1 están cerrados. C0 está bloqueado; U0 está integrado pero
+U-Pre pendiente. Antes de integrar una lane deben estar verdes sus tests y las
+auditorías vigentes sin Critical/High.
