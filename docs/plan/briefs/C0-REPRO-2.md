@@ -12,6 +12,12 @@ OWNER: circuits/**, crates/credential/**, scripts ZK y manifests C0
 REMOTE_WRITES: prohibidos; Codex publica assets después
 ```
 
+`BASE_COMMIT` identifica el inicio del diff funcional; no es una orden de
+reset. El worktree puede contener commits documentales posteriores. Está
+prohibido ejecutar `git reset`, `git checkout`, `git restore`, rebase o borrar
+commits. También está prohibido abrir subagentes: el implementador debe leer y
+editar directamente sólo los archivos necesarios.
+
 Autoridad técnica:
 
 - `docs/plan/ZK-QUORUM-EXECUTION-PLAN.md`: §3, §5, §6, Gate C0 y §15.1.
