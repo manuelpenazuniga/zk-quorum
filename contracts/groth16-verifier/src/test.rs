@@ -19,6 +19,12 @@ fn g1_from_coords(env: &Env, x: &str, y: &str) -> G1Affine {
     G1Affine::from_array(env, &buf)
 }
 
+fn g1_identity(env: &Env) -> G1Affine {
+    let mut buf = [0u8; G1_SERIALIZED_SIZE];
+    buf[0] = 0x40;
+    G1Affine::from_array(env, &buf)
+}
+
 fn g2_from_coords(env: &Env, x1: &str, x2: &str, y1: &str, y2: &str) -> G2Affine {
     let x = Fq2::new(Fq::from_str(x1).unwrap(), Fq::from_str(x2).unwrap());
     let y = Fq2::new(Fq::from_str(y1).unwrap(), Fq::from_str(y2).unwrap());
@@ -149,6 +155,36 @@ fn test_malformed_proof() {
 
     let result = client.try_verify_proof(&vk_bytes, &proof_bytes, &signals_bytes);
     assert_eq!(result, Err(Ok(crate::VerifierError::MalformedProof)));
+}
+
+#[test]
+fn test_verify_proof_c33_extended_identity() {
+    let env = Env::default();
+    let contract_id = env.register(Groth16VerifierContract, ());
+    let client = Groth16VerifierContractClient::new(&env, &contract_id);
+
+    let mut vk = VerificationKey::from_bytes(&env, &make_vk_bytes(&env)).unwrap();
+    for _ in 0..5 {
+        vk.ic.push_back(g1_identity(&env));
+    }
+    let vk_bytes = vk.to_bytes(&env);
+    let proof_bytes = make_proof_bytes(&env);
+    let signals = PublicSignals {
+        pub_signals: Vec::from_array(
+            &env,
+            [
+                Fr::from_u256(U256::from_u32(&env, 33)),
+                Fr::from_u256(U256::from_u32(&env, 0)),
+                Fr::from_u256(U256::from_u32(&env, 0)),
+                Fr::from_u256(U256::from_u32(&env, 0)),
+                Fr::from_u256(U256::from_u32(&env, 0)),
+                Fr::from_u256(U256::from_u32(&env, 0)),
+            ],
+        ),
+    };
+    let signals_bytes = signals.to_bytes(&env);
+
+    assert!(client.verify_proof(&vk_bytes, &proof_bytes, &signals_bytes));
 }
 
 #[test]

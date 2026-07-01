@@ -595,7 +595,7 @@ impl ZkQuorumContract {
         let reveal_count = Storage::get_reveal_count(&env, &election_id);
         let non_reveal_count = commit_count
             .checked_sub(reveal_count)
-            .ok_or(Error::ArithmeticOverflow)?;
+            .ok_or(Error::CounterInvariant)?;
 
         let tally: [u64; 16] = Storage::sum_tally(&env, &election_id, election.option_count)?;
 
@@ -621,7 +621,7 @@ impl ZkQuorumContract {
         let reveal_count = Storage::get_reveal_count(&env, &election_id);
         let non_reveal_count = commit_count
             .checked_sub(reveal_count)
-            .ok_or(Error::ArithmeticOverflow)?;
+            .ok_or(Error::CounterInvariant)?;
 
         let tally: [u64; 16] = Storage::sum_tally(&env, &election_id, election.option_count)?;
 

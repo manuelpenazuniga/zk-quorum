@@ -1382,9 +1382,9 @@ dependencies = [
 
 [[package]]
 name = "soroban-ledger-snapshot"
-version = "25.3.1"
+version = "25.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ca06e6c5029d1285e66219cb387a234224e26969ce8ad2bc2d5017e9395d63b"
+checksum = "99c5285c83e7a5581879b7a65033eae53b24ac9689975aa6887f1d8ee3e941c9"
 dependencies = [
  "serde",
  "serde_json",
@@ -1449,12 +1449,11 @@ dependencies = [
 
 [[package]]
 name = "soroban-spec"
-version = "25.3.1"
+version = "25.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa02e07f507cc27406ae0834db4dcf309b78c4cc8776eb3b2d662d66e8859d25"
+checksum = "0186c943a78de7038ce7eee478f521f7a7665440101ae0d24b4a59833fb6d833"
 dependencies = [
  "base64",
- "sha2",
  "stellar-xdr",
  "thiserror",
  "wasmparser",
@@ -1462,9 +1461,9 @@ dependencies = [
 
 [[package]]
 name = "soroban-spec-rust"
-version = "25.3.1"
+version = "25.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6835bb510763ef3fa5405e89036e3c8ea6ef5abe55fc52cfe9ac0e38be9d531c"
+checksum = "7a948196ed0633be3a4125e0c7a4fc0bb6337942e538813b1f171331738f9058"
 dependencies = [
  "prettyplease",
  "proc-macro2",

@@ -249,6 +249,17 @@ fn test_pub_signals_zero_allowed() {
 }
 
 #[test]
+fn test_identity_g1_roundtrip() {
+    let env = Env::default();
+    let mut buf = [0u8; G1_SERIALIZED_SIZE];
+    buf[0] = 0x40; // arkworks uncompressed infinity flag
+    let g1 = SdkG1Affine::from_array(&env, &buf);
+    let bytes = g1.to_bytes();
+    let arr = bytes.to_array();
+    assert_eq!(&arr[..], &buf[..]);
+}
+
+#[test]
 fn test_pub_signals_max_canonical_allowed() {
     let env = Env::default();
     // r-1 is the maximum canonical value, must be accepted

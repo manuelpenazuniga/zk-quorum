@@ -21,6 +21,13 @@ fn g1_from_coords(env: &Env, x: &str, y: &str) -> G1Affine {
     G1Affine::from_array(env, &buf)
 }
 
+/// Return the G1 identity (point at infinity) in uncompressed encoding.
+fn g1_identity(env: &Env) -> G1Affine {
+    let mut buf = [0u8; G1_SERIALIZED_SIZE];
+    buf[0] = 0x40; // arkworks uncompressed infinity flag
+    G1Affine::from_array(env, &buf)
+}
+
 fn g2_from_coords(env: &Env, x1: &str, x2: &str, y1: &str, y2: &str) -> G2Affine {
     let x = Fq2::new(Fq::from_str(x1).unwrap(), Fq::from_str(x2).unwrap());
     let y = Fq2::new(Fq::from_str(y1).unwrap(), Fq::from_str(y2).unwrap());
@@ -69,6 +76,18 @@ fn make_vk_bytes_c33(env: &Env) -> Bytes {
     vk.to_bytes(env)
 }
 
+/// Extend the c=33 VK from IC length 2 to IC length 7 by appending five
+/// G1 identity points. The five extra public inputs must therefore be zero
+/// for the pairing check to remain valid; this lets us reuse the c=33 proof
+/// (one public input) for the R0 schema (six public inputs).
+fn make_vk_bytes_c33_extended(env: &Env) -> Bytes {
+    let mut vk = VerificationKey::from_bytes(env, &make_vk_bytes_c33(env)).unwrap();
+    for _ in 0..5 {
+        vk.ic.push_back(g1_identity(env));
+    }
+    vk.to_bytes(env)
+}
+
 fn make_proof_bytes_c33(env: &Env) -> Bytes {
     let proof = Proof {
         a: g1_from_coords(env,
@@ -87,13 +106,6 @@ fn make_proof_bytes_c33(env: &Env) -> Bytes {
         ),
     };
     proof.to_bytes(env)
-}
-
-fn make_public_signals_bytes_c33(env: &Env, value: u32) -> Bytes {
-    let signals = PublicSignals {
-        pub_signals: Vec::from_array(env, [Fr::from_u256(U256::from_u32(env, value))]),
-    };
-    signals.to_bytes(env)
 }
 
 /// Build a dummy VK bytes blob (not matching any proof - for validation tests).
@@ -1617,10 +1629,10 @@ fn test_tally_bucket_overflow_safety() {
     let tally = client.get_tally_bucket(&election_id, &0u32, &0u32);
     assert_eq!(tally, u64::MAX);
 
-    // Checked arithmetic: overflow returns error instead of saturating
+    // Checked arithmetic: overflow returns TallyOverflow instead of saturating
     env.as_contract(&contract_id, || {
         let result = Storage::increment_tally(&env, &election_id, 0, 0);
-        assert_eq!(result, Err(Error::ArithmeticOverflow));
+        assert_eq!(result, Err(Error::TallyOverflow));
     });
 }
 
@@ -1931,10 +1943,13 @@ fn test_cast_r0_with_c33_verifier() {
     let verifier_id = env.register(crate::verifier_client::WASM, ());
 
     let admin = Address::generate(&env);
-    let vk = make_vk_bytes_c33(&env);
+    // Extend the c=33 VK from IC len 2 to IC len 7 so it matches the R0
+    // public signal schema (6 public signals). The five appended G1 identity
+    // points contribute zero to vk_x, so the original c=33 proof remains valid
+    // as long as the five extra public signals are zero.
+    let vk = make_vk_bytes_c33_extended(&env);
     let vk_hash = sha256_bytes(&env, &vk);
 
-    // Register zk-quorum with c=33 VK
     let contract_id = env.register(
         ZkQuorumContract,
         (
@@ -1948,60 +1963,147 @@ fn test_cast_r0_with_c33_verifier() {
     );
     let client = ZkQuorumContractClient::new(&env, &contract_id);
 
-    // The c=33 proof is for a single-input circuit (c is public = 33).
-    // Our R0 expects 6 public signals. We can't use the c=33 proof directly
-    // for a full R0 cast since the signal structure differs. But we CAN verify
-    // that the cross-contract call works by checking the verifier is reachable.
-    //
-    // We instead test that the contract can call the verifier (even if it
-    // returns false due to signal mismatch).
-    //
-    // Verify the verifier works standalone first:
-    let verifier_client = crate::verifier_client::Client::new(&env, &verifier_id);
-    let c33_signals = make_public_signals_bytes_c33(&env, 33);
-    let c33_proof = make_proof_bytes_c33(&env);
-    assert!(verifier_client.verify_proof(&vk, &c33_proof, &c33_signals));
-
-    // For the actual R0 cross-contract test, we need:
-    // 1. An election with settings matching the VK (VK has IC len=2)
-    // 2. A proof that encodes 6 public signals through the IC
-    //
-    // Since the c=33 VK has IC len=2 (1 public input), and our R0 needs 6 public
-    // signals (needing IC len=7), we can't use this VK for a full R0 cast.
-    // The proof verification would fail because IC length doesn't match.
-    //
-    // This test verifies cross-contract infrastructure is sound.
-    // The actual R0/R1 circuit proofs will be tested when the ZK circuits
-    // produce them (Gate C0).
-
     env.ledger().set_timestamp(1000);
     let opens_at = 1000;
     let closes_at = 5000;
 
     env.mock_all_auths();
     let election_id = BytesN::from_array(&env, &[1u8; 32]);
+    let scope = example_scope(&env);
+    let state_root = example_state_root(&env);
+    let association_root = example_association_root(&env);
     client.open_election(
         &admin,
         &election_id,
-        &example_scope(&env),
+        &scope,
         &ElectionMode::R0,
-        &example_state_root(&env),
-        &example_association_root(&env),
+        &state_root,
+        &association_root,
         &3u32,
         &opens_at,
         &closes_at,
         &0u64,
     );
 
-    // Try to cast - it will fail because the VK IC length doesn't match
-    // our 6 public signals, but the verifier call infrastructure is exercised
-    let proof_bytes = make_empty_proof_bytes(&env);
-    let pub_sigs =
-        make_r0_pub_signals_bytes(&env, &[0u8; 32], 0, 3, &[3u8; 32], &[4u8; 32], &[2u8; 32]);
+    // nullifier_hash = 33 encoded as a canonical 32-byte big-endian scalar.
+    let mut nullifier_arr = [0u8; 32];
+    nullifier_arr[31] = 33;
+    let nullifier_hash = BytesN::from_array(&env, &nullifier_arr);
+    let bucket = tally_bucket_from_nullifier(&nullifier_hash);
+
+    let state_root_arr = state_root.to_array();
+    let association_root_arr = association_root.to_array();
+    let scope_arr = scope.to_array();
+    let pub_sigs = make_r0_pub_signals_bytes(
+        &env,
+        &nullifier_arr,
+        0,
+        3,
+        &state_root_arr,
+        &association_root_arr,
+        &scope_arr,
+    );
+    let proof_bytes = make_proof_bytes_c33(&env);
 
     let result = client.try_cast(&election_id, &proof_bytes, &pub_sigs);
-    // The verifier will return an IC length error, which maps to ProofVerificationFailed
-    assert!(result.is_err());
+    assert_eq!(result, Ok(Ok(())));
+
+    // Check events before any other host invocation (env.events().all()
+    // only reports events from the most recent invocation).
+    let all_events = env.events().all();
+    assert_eq!(all_events.events().len(), 1);
+
+    // Nullifier is marked and tally is updated.
+    assert!(client.is_nullifier_used(&election_id, &nullifier_hash));
+    assert_eq!(client.get_tally_bucket(&election_id, &0u32, &bucket), 1);
+}
+
+// ── R1 first-commit regression (extends c=33 proof) ──
+
+#[test]
+fn test_commit_r1_first_with_c33_verifier() {
+    let env = Env::default();
+    let verifier_id = env.register(crate::verifier_client::WASM, ());
+
+    let admin = Address::generate(&env);
+    let vk = make_vk_bytes_c33_extended(&env);
+    let vk_hash = sha256_bytes(&env, &vk);
+
+    let contract_id = env.register(
+        ZkQuorumContract,
+        (
+            admin.clone(),
+            verifier_id.clone(),
+            vk.clone(),
+            vk.clone(),
+            vk_hash.clone(),
+            vk_hash.clone(),
+        ),
+    );
+    let client = ZkQuorumContractClient::new(&env, &contract_id);
+
+    env.ledger().set_timestamp(1000);
+    let opens_at = 1000;
+    let closes_at = 5000;
+    let reveal_closes_at = 10000;
+
+    env.mock_all_auths();
+    let election_id = BytesN::from_array(&env, &[1u8; 32]);
+    let scope = example_scope(&env);
+    let state_root = example_state_root(&env);
+    let association_root = example_association_root(&env);
+    client.open_election(
+        &admin,
+        &election_id,
+        &scope,
+        &ElectionMode::R1,
+        &state_root,
+        &association_root,
+        &3u32,
+        &opens_at,
+        &closes_at,
+        &reveal_closes_at,
+    );
+
+    // nullifier_hash = 33 (matches c=33 proof's single public input)
+    let mut nullifier_arr = [0u8; 32];
+    nullifier_arr[31] = 33;
+    let nullifier_hash = BytesN::from_array(&env, &nullifier_arr);
+
+    // ballot_commitment = 1 (non-zero; its IC point is G1 identity so
+    // any value is fine for the pairing check to pass)
+    let mut commitment_arr = [0u8; 32];
+    commitment_arr[31] = 1;
+
+    let state_root_arr = state_root.to_array();
+    let association_root_arr = association_root.to_array();
+    let scope_arr = scope.to_array();
+    let pub_sigs = make_r1_pub_signals_bytes(
+        &env,
+        &nullifier_arr,
+        &commitment_arr,
+        3,
+        &state_root_arr,
+        &association_root_arr,
+        &scope_arr,
+    );
+    let proof_bytes = make_proof_bytes_c33(&env);
+
+    let result = client.try_cast(&election_id, &proof_bytes, &pub_sigs);
+    assert_eq!(result, Ok(Ok(())));
+
+    // Check events before any other host invocation.
+    let all_events = env.events().all();
+    assert_eq!(all_events.events().len(), 1);
+
+    // Nullifier is marked.
+    assert!(client.is_nullifier_used(&election_id, &nullifier_hash));
+
+    // Commit count = 1, reveal count still zero.
+    let summary = client.result(&election_id);
+    assert_eq!(summary.commit_count, 1);
+    assert_eq!(summary.reveal_count, 0);
+    assert_eq!(summary.non_reveal_count, 1);
 }
 
 // ── Zero electionScope rejection ──
@@ -2164,7 +2266,7 @@ fn test_commit_count_overflow() {
 
     env.as_contract(&contract_id, || {
         let result = Storage::increment_commit_count(&env, &election_id);
-        assert_eq!(result, Err(Error::ArithmeticOverflow));
+        assert_eq!(result, Err(Error::CounterOverflow));
     });
 }
 
@@ -2198,7 +2300,7 @@ fn test_reveal_count_overflow() {
 
     env.as_contract(&contract_id, || {
         let result = Storage::increment_reveal_count(&env, &election_id);
-        assert_eq!(result, Err(Error::ArithmeticOverflow));
+        assert_eq!(result, Err(Error::CounterOverflow));
     });
 }
 
@@ -2235,6 +2337,6 @@ fn test_sum_tally_overflow() {
 
     env.as_contract(&contract_id, || {
         let result = Storage::sum_tally(&env, &election_id, 1);
-        assert_eq!(result, Err(Error::ArithmeticOverflow));
+        assert_eq!(result, Err(Error::TallyOverflow));
     });
 }

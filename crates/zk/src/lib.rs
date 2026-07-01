@@ -66,7 +66,10 @@ impl VerificationKey {
     }
 
     pub fn from_bytes(env: &Env, bytes: &Bytes) -> Result<Self, Groth16Error> {
-        let header_size: u32 = (G1_SERIALIZED_SIZE + G2_SERIALIZED_SIZE * 3 + 4) as u32;
+        let header_size: u32 = (G1_SERIALIZED_SIZE as u32)
+            .checked_add((G2_SERIALIZED_SIZE * 3) as u32)
+            .and_then(|v| v.checked_add(4))
+            .ok_or(Groth16Error::MalformedVerifyingKey)?;
         if bytes.len() < header_size {
             return Err(Groth16Error::MalformedVerifyingKey);
         }
@@ -92,7 +95,10 @@ impl VerificationKey {
         let expected_ic: u64 = (ic_len_u32 as u64)
             .checked_mul(G1_SERIALIZED_SIZE as u64)
             .ok_or(Groth16Error::MalformedVerifyingKey)?;
-        let remaining = (bytes.len() - pos) as u64;
+        let remaining = bytes
+            .len()
+            .checked_sub(pos)
+            .ok_or(Groth16Error::MalformedVerifyingKey)? as u64;
         if remaining != expected_ic {
             return Err(Groth16Error::MalformedVerifyingKey);
         }
@@ -138,7 +144,9 @@ impl VerificationKey {
             return Err(Groth16Error::MalformedVerifyingKey);
         }
         let start = *pos;
-        let end = start + size as u32;
+        let end = start
+            .checked_add(size as u32)
+            .ok_or(Groth16Error::MalformedVerifyingKey)?;
         if end > bytes.len() {
             return Err(Groth16Error::MalformedVerifyingKey);
         }
@@ -166,24 +174,44 @@ impl Proof {
     }
 
     pub fn from_bytes(env: &Env, bytes: &Bytes) -> Result<Self, Groth16Error> {
-        let expected: u32 = (G1_SERIALIZED_SIZE + G2_SERIALIZED_SIZE + G1_SERIALIZED_SIZE) as u32;
+        let expected: u32 = (G1_SERIALIZED_SIZE as u32)
+            .checked_add(G2_SERIALIZED_SIZE as u32)
+            .and_then(|v| v.checked_add(G1_SERIALIZED_SIZE as u32))
+            .ok_or(Groth16Error::MalformedProof)?;
         if bytes.len() != expected {
             return Err(Groth16Error::MalformedProof);
         }
         let mut pos: u32 = 0;
 
-        fn take_array<const N: usize>(bytes: &Bytes, pos: &mut u32) -> [u8; N] {
+        fn take_array<const N: usize>(
+            bytes: &Bytes,
+            pos: &mut u32,
+        ) -> Result<[u8; N], Groth16Error> {
             let start = *pos;
-            let end = start + N as u32;
+            let end = start
+                .checked_add(N as u32)
+                .ok_or(Groth16Error::MalformedProof)?;
+            if end > bytes.len() {
+                return Err(Groth16Error::MalformedProof);
+            }
             let mut arr = [0u8; N];
             bytes.slice(start..end).copy_into_slice(&mut arr);
             *pos = end;
-            arr
+            Ok(arr)
         }
 
-        let a = G1Affine::from_array(env, &take_array::<G1_SERIALIZED_SIZE>(bytes, &mut pos));
-        let b = G2Affine::from_array(env, &take_array::<G2_SERIALIZED_SIZE>(bytes, &mut pos));
-        let c = G1Affine::from_array(env, &take_array::<G1_SERIALIZED_SIZE>(bytes, &mut pos));
+        let a = G1Affine::from_array(
+            env,
+            &take_array::<G1_SERIALIZED_SIZE>(bytes, &mut pos)?,
+        );
+        let b = G2Affine::from_array(
+            env,
+            &take_array::<G2_SERIALIZED_SIZE>(bytes, &mut pos)?,
+        );
+        let c = G1Affine::from_array(
+            env,
+            &take_array::<G1_SERIALIZED_SIZE>(bytes, &mut pos)?,
+        );
         Ok(Proof { a, b, c })
     }
 }
@@ -224,16 +252,21 @@ impl PublicSignals {
             return Err(Groth16Error::MalformedPublicSignals);
         }
         let mut pos: u32 = 0;
-        let len_slice = bytes.slice(pos..pos + 4);
+        let len_end = pos.checked_add(4).ok_or(Groth16Error::MalformedPublicSignals)?;
+        let len_slice = bytes.slice(pos..len_end);
         let mut len_arr = [0u8; 4];
         len_slice.copy_into_slice(&mut len_arr);
         let len = u32::from_be_bytes(len_arr) as usize;
-        pos += 4;
+        pos = len_end;
 
         let expected: u64 = (len as u64)
             .checked_mul(Self::FR_SIZE as u64)
             .ok_or(Groth16Error::MalformedPublicSignals)?;
-        if bytes.len() as u64 - pos as u64 != expected {
+        let body_len = bytes
+            .len()
+            .checked_sub(pos)
+            .ok_or(Groth16Error::MalformedPublicSignals)? as u64;
+        if body_len != expected {
             return Err(Groth16Error::MalformedPublicSignals);
         }
 
@@ -241,10 +274,13 @@ impl PublicSignals {
 
         let mut pub_signals = Vec::new(env);
         for _ in 0..len {
+            let fr_end = pos
+                .checked_add(Self::FR_SIZE as u32)
+                .ok_or(Groth16Error::MalformedPublicSignals)?;
             let mut arr = [0u8; Self::FR_SIZE];
-            let slice = bytes.slice(pos..pos + Self::FR_SIZE as u32);
+            let slice = bytes.slice(pos..fr_end);
             slice.copy_into_slice(&mut arr);
-            pos += Self::FR_SIZE as u32;
+            pos = fr_end;
             let u256 = U256::from_be_bytes(env, &Bytes::from_array(env, &arr));
             // Reject non-canonical scalars: value must be strictly less than r
             if u256 >= fr_modulus {

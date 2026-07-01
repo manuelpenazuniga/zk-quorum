@@ -40,7 +40,7 @@ pub fn emit_vote_cast_v1(
     proof_hash: &BytesN<32>,
     public_signals_hash: &BytesN<32>,
 ) {
-    env.events().publish_event(&VoteCastV1 {
+    VoteCastV1 {
         election_id: election_id.clone(),
         nullifier_hash: nullifier_hash.clone(),
         vote,
@@ -48,7 +48,8 @@ pub fn emit_vote_cast_v1(
         public_schema_version,
         proof_hash: proof_hash.clone(),
         public_signals_hash: public_signals_hash.clone(),
-    });
+    }
+    .publish(env);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -62,7 +63,7 @@ pub fn emit_vote_committed_v1(
     proof_hash: &BytesN<32>,
     public_signals_hash: &BytesN<32>,
 ) {
-    env.events().publish_event(&VoteCommittedV1 {
+    VoteCommittedV1 {
         election_id: election_id.clone(),
         nullifier_hash: nullifier_hash.clone(),
         ballot_commitment: ballot_commitment.clone(),
@@ -70,7 +71,8 @@ pub fn emit_vote_committed_v1(
         public_schema_version,
         proof_hash: proof_hash.clone(),
         public_signals_hash: public_signals_hash.clone(),
-    });
+    }
+    .publish(env);
 }
 
 pub fn emit_vote_revealed_v1(
@@ -79,9 +81,10 @@ pub fn emit_vote_revealed_v1(
     ballot_commitment: &BytesN<32>,
     vote: u32,
 ) {
-    env.events().publish_event(&VoteRevealedV1 {
+    VoteRevealedV1 {
         election_id: election_id.clone(),
         ballot_commitment: ballot_commitment.clone(),
         vote,
-    });
+    }
+    .publish(env);
 }

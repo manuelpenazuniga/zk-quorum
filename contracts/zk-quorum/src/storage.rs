@@ -207,7 +207,7 @@ impl Storage {
     ) -> Result<(), Error> {
         let key = DataKey::tally_bucket_key(election_id, option, bucket);
         let current: u64 = env.storage().persistent().get(&key).unwrap_or(0);
-        let next = current.checked_add(1).ok_or(Error::ArithmeticOverflow)?;
+        let next = current.checked_add(1).ok_or(Error::TallyOverflow)?;
         env.storage().persistent().set(&key, &next);
         env.storage()
             .persistent()
@@ -226,7 +226,7 @@ impl Storage {
             for bucket in 0..TALLY_BUCKETS {
                 sum = sum
                     .checked_add(Self::get_tally(env, election_id, opt, bucket))
-                    .ok_or(Error::ArithmeticOverflow)?;
+                    .ok_or(Error::TallyOverflow)?;
             }
             tally[opt as usize] = sum;
         }
@@ -243,7 +243,7 @@ impl Storage {
     pub fn increment_commit_count(env: &Env, election_id: &BytesN<32>) -> Result<u32, Error> {
         let key = DataKey::commit_count_key(election_id);
         let current: u32 = env.storage().persistent().get(&key).unwrap_or(0);
-        let next = current.checked_add(1).ok_or(Error::ArithmeticOverflow)?;
+        let next = current.checked_add(1).ok_or(Error::CounterOverflow)?;
         env.storage().persistent().set(&key, &next);
         env.storage()
             .persistent()
@@ -259,7 +259,7 @@ impl Storage {
     pub fn increment_reveal_count(env: &Env, election_id: &BytesN<32>) -> Result<u32, Error> {
         let key = DataKey::reveal_count_key(election_id);
         let current: u32 = env.storage().persistent().get(&key).unwrap_or(0);
-        let next = current.checked_add(1).ok_or(Error::ArithmeticOverflow)?;
+        let next = current.checked_add(1).ok_or(Error::CounterOverflow)?;
         env.storage().persistent().set(&key, &next);
         env.storage()
             .persistent()
@@ -336,13 +336,27 @@ impl Storage {
             .extend_ttl(&election_key, threshold(), extend_to());
 
         let count_key = DataKey::commit_count_key(election_id);
-        env.storage()
+        if env
+            .storage()
             .persistent()
-            .extend_ttl(&count_key, threshold(), extend_to());
+            .get::<_, u32>(&count_key)
+            .is_some()
+        {
+            env.storage()
+                .persistent()
+                .extend_ttl(&count_key, threshold(), extend_to());
+        }
 
         let reveal_key = DataKey::reveal_count_key(election_id);
-        env.storage()
+        if env
+            .storage()
             .persistent()
-            .extend_ttl(&reveal_key, threshold(), extend_to());
+            .get::<_, u32>(&reveal_key)
+            .is_some()
+        {
+            env.storage()
+                .persistent()
+                .extend_ttl(&reveal_key, threshold(), extend_to());
+        }
     }
 }
