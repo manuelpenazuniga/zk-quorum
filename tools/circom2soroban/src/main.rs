@@ -1,6 +1,8 @@
 //! circom2soroban CLI — convert snarkjs JSON to Soroban canonical bytes.
 
-use circom2soroban::{convert_proof, convert_public_signals, convert_vk, ProofJson, PublicJson, VkJson};
+use circom2soroban::{
+    convert_proof, convert_public_signals, convert_vk, ProofJson, PublicJson, VkJson,
+};
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -34,17 +36,11 @@ fn cmd_proof(proof_path: &str, out: Option<&str>) -> Result<(), String> {
 
 fn cmd_public(pub_path: &str, out: Option<&str>) -> Result<(), String> {
     let signals: PublicJson = read_json(pub_path)?;
-    let bytes =
-        convert_public_signals(&signals).map_err(|e| e.to_string())?;
+    let bytes = convert_public_signals(&signals).map_err(|e| e.to_string())?;
     write_output(&bytes, out)
 }
 
-fn cmd_all(
-    vk_path: &str,
-    proof_path: &str,
-    pub_path: &str,
-    out_dir: &str,
-) -> Result<(), String> {
+fn cmd_all(vk_path: &str, proof_path: &str, pub_path: &str, out_dir: &str) -> Result<(), String> {
     fs::create_dir_all(out_dir).map_err(|e| format!("Cannot create {}: {}", out_dir, e))?;
 
     let vk: VkJson = read_json(vk_path)?;
@@ -53,14 +49,12 @@ fn cmd_all(
         .map_err(|e| format!("Cannot write vk.bin: {}", e))?;
 
     let proof: ProofJson = read_json(proof_path)?;
-    let proof_bytes =
-        convert_proof(&proof).map_err(|e| e.to_string())?;
+    let proof_bytes = convert_proof(&proof).map_err(|e| e.to_string())?;
     fs::write(Path::new(out_dir).join("proof.bin"), &proof_bytes)
         .map_err(|e| format!("Cannot write proof.bin: {}", e))?;
 
     let signals: PublicJson = read_json(pub_path)?;
-    let pub_bytes =
-        convert_public_signals(&signals).map_err(|e| e.to_string())?;
+    let pub_bytes = convert_public_signals(&signals).map_err(|e| e.to_string())?;
     fs::write(Path::new(out_dir).join("public.bin"), &pub_bytes)
         .map_err(|e| format!("Cannot write public.bin: {}", e))?;
 
@@ -107,7 +101,9 @@ fn main() {
         }
         "all" => {
             if args.len() < 6 {
-                eprintln!("Usage: circom2soroban all <vk.json> <proof.json> <public.json> <out_dir>");
+                eprintln!(
+                    "Usage: circom2soroban all <vk.json> <proof.json> <public.json> <out_dir>"
+                );
                 std::process::exit(1);
             }
             cmd_all(&args[2], &args[3], &args[4], &args[5])

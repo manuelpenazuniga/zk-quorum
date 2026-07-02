@@ -2,8 +2,8 @@
 //! Tests: valid VK/proof/public, off-curve Fq-valid points, out-of-subgroup,
 //! infinity rejection, unknown fields, structural constraint checks.
 
-use circom2soroban::*;
 use ark_bls12_381::{Fq, Fq2, G1Affine};
+use circom2soroban::*;
 
 // ── Positive: real R0 VK/proof/public ──
 
@@ -25,10 +25,7 @@ fn test_convert_real_r0_vk() {
 
 #[test]
 fn test_convert_real_r0_proof() {
-    let proof_path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tmp/e0/proof.json"
-    );
+    let proof_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp/e0/proof.json");
     let data = std::fs::read_to_string(proof_path).unwrap();
     let proof: ProofJson = serde_json::from_str(&data).unwrap();
     let bytes = convert_proof(&proof).unwrap();
@@ -37,10 +34,7 @@ fn test_convert_real_r0_proof() {
 
 #[test]
 fn test_convert_real_r0_public() {
-    let pub_path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tmp/e0/public.json"
-    );
+    let pub_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp/e0/public.json");
     let data = std::fs::read_to_string(pub_path).unwrap();
     let signals: PublicJson = serde_json::from_str(&data).unwrap();
     let bytes = convert_public_signals(&signals).unwrap();
@@ -58,13 +52,19 @@ fn test_off_curve_g1_rejected() {
         n_public: 6,
         vk_alpha_1: ["1".into(), "2".into(), "1".into()],
         vk_beta_2: [
-            ["0".into(), "0".into()], ["0".into(), "0".into()], ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
         ],
         vk_gamma_2: [
-            ["0".into(), "0".into()], ["0".into(), "0".into()], ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
         ],
         vk_delta_2: [
-            ["0".into(), "0".into()], ["0".into(), "0".into()], ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
         ],
         ic: vec![["1".into(), "1".into(), "1".into()]; 7],
         vk_alphabeta_12: serde_json::Value::Null,
@@ -72,7 +72,11 @@ fn test_off_curve_g1_rejected() {
     let result = convert_vk(&vk);
     assert!(result.is_err(), "Off-curve G1 should be rejected");
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("not on G1 curve"), "Expected curve error, got: {}", err);
+    assert!(
+        err.contains("not on G1 curve"),
+        "Expected curve error, got: {}",
+        err
+    );
 }
 
 #[test]
@@ -89,13 +93,19 @@ fn test_off_curve_g2_rejected() {
         n_public: 6,
         vk_alpha_1: valid_g1.clone().map(|s| s.to_string()),
         vk_beta_2: [
-            ["1".into(), "0".into()], ["0".into(), "1".into()], ["1".into(), "0".into()],
+            ["1".into(), "0".into()],
+            ["0".into(), "1".into()],
+            ["1".into(), "0".into()],
         ],
         vk_gamma_2: [
-            ["0".into(), "0".into()], ["0".into(), "0".into()], ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
         ],
         vk_delta_2: [
-            ["0".into(), "0".into()], ["0".into(), "0".into()], ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
+            ["0".into(), "0".into()],
         ],
         ic: vec![valid_g1.clone().map(|s| s.to_string()); 7],
         vk_alphabeta_12: serde_json::Value::Null,
@@ -159,7 +169,11 @@ fn test_infinity_alpha_rejected() {
     let result = convert_vk(&vk);
     assert!(result.is_err(), "Infinity alpha should be rejected");
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("flag must be '1'"), "Expected flag error, got: {}", err);
+    assert!(
+        err.contains("flag must be '1'"),
+        "Expected flag error, got: {}",
+        err
+    );
 }
 
 // ── Negative: structural constraint checks ──
@@ -170,7 +184,10 @@ fn test_npublic_not_6_rejected() {
     let vk: VkJson = serde_json::from_str(data).unwrap();
     let result = convert_vk(&vk);
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("nPublic must be 6"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("nPublic must be 6"));
 }
 
 #[test]
@@ -179,7 +196,10 @@ fn test_ic_len_not_7_rejected() {
     let vk: VkJson = serde_json::from_str(data).unwrap();
     let result = convert_vk(&vk);
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("IC length must be 7"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("IC length must be 7"));
 }
 
 #[test]
@@ -191,11 +211,36 @@ fn test_public_len_not_6_rejected() {
 }
 
 #[test]
+fn test_leading_zero_decimal_rejected() {
+    // Leading zeros are rejected by parse_decimal
+    let signals: PublicJson = vec![
+        "1".into(),
+        "01".into(),
+        "5".into(),
+        "1".into(),
+        "1".into(),
+        "1".into(),
+    ];
+    let result = convert_public_signals(&signals);
+    assert!(result.is_err(), "Leading zeros should be rejected");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("Leading zeros"),
+        "Expected leading-zero error, got: {}",
+        err
+    );
+}
+
+#[test]
 fn test_fr_out_of_range_rejected() {
     // Fr modulus = 52435875175126190479447740508185965837690552500527637822603658699938581184513
     let signals: PublicJson = vec![
-        "1".into(), "1".into(), "5".into(), "1".into(), "1".into(),
-        "52435875175126190479447740508185965837690552500527637822603658699938581184513".into() // == modulus (rejected)
+        "1".into(),
+        "1".into(),
+        "5".into(),
+        "1".into(),
+        "1".into(),
+        "52435875175126190479447740508185965837690552500527637822603658699938581184513".into(), // == modulus (rejected)
     ];
     let result = convert_public_signals(&signals);
     assert!(result.is_err());
@@ -206,7 +251,10 @@ fn test_fr_out_of_range_rejected() {
 fn test_unknown_vk_field_rejected() {
     let data = r#"{"protocol":"groth16","curve":"bls12381","nPublic":6,"vk_alpha_1":["0","0","0"],"vk_beta_2":[["0","0"],["0","0"],["0","0"]],"vk_gamma_2":[["0","0"],["0","0"],["0","0"]],"vk_delta_2":[["0","0"],["0","0"],["0","0"]],"IC":[["1","1","1"],["1","1","1"],["1","1","1"],["1","1","1"],["1","1","1"],["1","1","1"],["1","1","1"]],"vk_alphabeta_12":null,"extra_field":true}"#;
     let result: Result<VkJson, _> = serde_json::from_str(data);
-    assert!(result.is_err(), "Unknown field should be rejected by deny_unknown_fields");
+    assert!(
+        result.is_err(),
+        "Unknown field should be rejected by deny_unknown_fields"
+    );
     assert!(result.unwrap_err().to_string().contains("extra_field"));
 }
 

@@ -78,7 +78,8 @@ for (const f of requiredObsFields) {
 // Reject unknown top-level fields
 const knownObsFields = new Set([
     ...requiredObsFields,
-    'tally', 'result', 'event_contains_proof_hash', 'event_contains_public_signals_hash',
+    'tally', 'result',
+    'event_matches_expected',
     'duplicate_no_state_mutation', 'duplicate_no_new_events',
     'mutated_no_state_mutation', 'mutated_no_new_events'
 ]);
@@ -165,7 +166,7 @@ ok('Nullifier uniqueness: single cast, no duplicates');
 
 // 7. Tally consistency
 if (observation.duplicate_outcome === 'NullifierAlreadyUsed') ok('Duplicate correctly rejected');
-if (observation.mutated_proof_outcome === 'rejected') ok('Mutated proof correctly rejected');
+if (observation.mutated_proof_outcome === 'ProofVerificationFailed') ok('Mutated proof correctly rejected');
 if (observation.duplicate_no_state_mutation) ok('No state mutation on duplicate');
 if (observation.mutated_no_state_mutation) ok('No state mutation on mutated proof');
 

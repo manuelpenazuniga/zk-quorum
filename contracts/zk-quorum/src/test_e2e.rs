@@ -1,19 +1,23 @@
 #![cfg(test)]
 extern crate std;
 
+use crate::events::VoteCastV1;
 use crate::*;
 use soroban_sdk::{
     crypto::bls12_381::Fr,
     testutils::{Address as _, Events as _, Ledger},
-    Address, Bytes, BytesN, Env,
+    Address, Bytes, BytesN, Env, Event,
 };
 use std::path::PathBuf;
 use zk::{PublicSignals, VerificationKey};
 
-/// Resolve path to tmp/e0/.
 fn e0_dir() -> PathBuf {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
-    PathBuf::from(&manifest_dir).join("..").join("..").join("tmp").join("e0")
+    PathBuf::from(&manifest_dir)
+        .join("..")
+        .join("..")
+        .join("tmp")
+        .join("e0")
 }
 
 fn read_e0_bytes(filename: &str) -> std::vec::Vec<u8> {
@@ -58,13 +62,11 @@ fn e2e_r0_full_flow() {
     let vk = VerificationKey::from_bytes(&env, &vk_bytes).expect("VK");
     assert_eq!(vk.ic.len(), 7);
 
-    // Pre-compute proof and public hashes
     let expected_proof_hash = sha256_bytes(&env, &proof_bytes);
     let expected_pub_hash = sha256_bytes(&env, &public_bytes);
-
     let vk_hash = sha256_bytes(&env, &vk_bytes);
     let signals = PublicSignals::from_bytes(&env, &public_bytes).expect("signals");
-    assert_eq!(signals.pub_signals.len(), PUBLIC_SIGNALS_R0_LEN as u32);
+    assert_eq!(signals.pub_signals.len(), PUBLIC_SIGNALS_R0_LEN);
 
     let nullifier_fr = signals.pub_signals.get(0).unwrap();
     let vote_fr = signals.pub_signals.get(1).unwrap();
@@ -100,46 +102,108 @@ fn e2e_r0_full_flow() {
     let election_id = BytesN::from_array(&env, &[0xE0u8; 32]);
     env.mock_all_auths();
     client.open_election(
-        &admin, &election_id, &scope, &ElectionMode::R0,
-        &state_root, &assoc_root, &option_count,
-        &500u64, &5000u64, &0u64,
+        &admin,
+        &election_id,
+        &scope,
+        &ElectionMode::R0,
+        &state_root,
+        &assoc_root,
+        &option_count,
+        &500u64,
+        &5000u64,
+        &0u64,
     );
 
     // ── Cast valid proof ──
     client.cast(&election_id, &proof_bytes, &public_bytes);
 
-    // ── Event assertion ──
-    let events_after_cast = env.events().all().events().len();
-    assert!(events_after_cast >= 1, "Expected at least 1 event");
+    // ── Event assertion: construct expected VoteCastV1 and compare XDR ──
+    let bucket = tally_bucket_from_nullifier(&nullifier_bytes);
+    let expected_event = VoteCastV1 {
+        election_id: election_id.clone(),
+        nullifier_hash: nullifier_bytes.clone(),
+        vote,
+        tally_bucket: bucket,
+        public_schema_version: PUBLIC_SCHEMA_V1_R0,
+        proof_hash: expected_proof_hash.clone(),
+        public_signals_hash: expected_pub_hash.clone(),
+    };
+    let expected_xdr = expected_event.to_xdr(&env, &contract_id);
+    let filtered = env.events().all().filter_by_contract(&contract_id);
+    let filtered_events = filtered.events();
+    assert_eq!(
+        filtered_events.len(),
+        1,
+        "Expected exactly 1 event from zk-quorum contract"
+    );
+    assert_eq!(
+        &filtered_events[0], &expected_xdr,
+        "Event XDR must match expected VoteCastV1"
+    );
 
     // ── Nullifier, tally, result ──
     assert!(client.is_nullifier_used(&election_id, &nullifier_bytes));
-    let bucket = tally_bucket_from_nullifier(&nullifier_bytes);
-    let tally_val = client.get_tally_bucket(&election_id, &vote, &bucket);
-    assert_eq!(tally_val, 1u64);
+    assert_eq!(client.get_tally_bucket(&election_id, &vote, &bucket), 1u64);
     let summary = client.result(&election_id);
     assert_eq!(summary.tally.get(vote).unwrap_or(0), 1u64);
 
-    // ── Duplicate cast → rejected, no state mutation, zero new events ──
-    let events_before_dup = env.events().all().events().len();
+    // ── Duplicate cast: NullifierAlreadyUsed, zero new events, state unchanged ──
+    let events_before_dup = env
+        .events()
+        .all()
+        .filter_by_contract(&contract_id)
+        .events()
+        .len();
     let dup_result = client.try_cast(&election_id, &proof_bytes, &public_bytes);
     assert_eq!(dup_result, Err(Ok(Error::NullifierAlreadyUsed)));
-    // No new events (the failed cast doesn't emit events)
-    let events_after_dup = env.events().all().events().len();
-    assert_eq!(events_after_dup, events_before_dup, "No new events after duplicate");
-    // State unchanged
+    let events_after_dup = env
+        .events()
+        .all()
+        .filter_by_contract(&contract_id)
+        .events()
+        .len();
+    assert_eq!(
+        events_after_dup, events_before_dup,
+        "No new events after duplicate rejection"
+    );
     assert_eq!(client.get_tally_bucket(&election_id, &vote, &bucket), 1u64);
-    assert_eq!(client.result(&election_id).tally.get(vote).unwrap_or(0), 1u64);
+    assert_eq!(
+        client.result(&election_id).tally.get(vote).unwrap_or(0),
+        1u64
+    );
 
-    // ── Mutated proof → rejected, no state mutation, zero new events ──
-    let mut mutated = proof_raw.clone();
-    if mutated.len() > 150 { mutated[150] ^= 0x01; }
-    let mutated_proof = Bytes::from_slice(&env, &mutated);
-    let events_before_mut = env.events().all().events().len();
-    let mut_result = client.try_cast(&election_id, &mutated_proof, &public_bytes);
-    assert!(mut_result.is_err(), "Mutated proof must be rejected");
-    let events_after_mut = env.events().all().events().len();
-    assert_eq!(events_after_mut, events_before_mut, "No new events after mutated");
+    // ── Mutated proof: C=A for valid G1 point, fresh nullifier, cryptographic error, zero new events, state unchanged ──
+    let mut mutated_proof = proof_raw.clone();
+    // Copy A (bytes 0..96) to C (bytes 288..384) → structurally valid proof with wrong C
+    if mutated_proof.len() >= 384 {
+        mutated_proof[288..384].copy_from_slice(&proof_raw[0..96]);
+    }
+    // Modify nullifier (bytes 4..36) in public signals so it passes the nullifier-used check
+    let mut mutated_public = public_raw.clone();
+    if mutated_public.len() >= 36 {
+        mutated_public[35] ^= 0x01; // toggle LSB → different unused nullifier, still canonical
+    }
+    let mutated_proof_bytes = Bytes::from_slice(&env, &mutated_proof);
+    let mutated_public_bytes = Bytes::from_slice(&env, &mutated_public);
+    let events_before_mut = env
+        .events()
+        .all()
+        .filter_by_contract(&contract_id)
+        .events()
+        .len();
+    let mut_result = client.try_cast(&election_id, &mutated_proof_bytes, &mutated_public_bytes);
+    // Mutated proof should fail at proof verification (cross-contract call)
+    assert_eq!(mut_result, Err(Ok(Error::ProofVerificationFailed)));
+    let events_after_mut = env
+        .events()
+        .all()
+        .filter_by_contract(&contract_id)
+        .events()
+        .len();
+    assert_eq!(
+        events_after_mut, events_before_mut,
+        "No new events after mutated proof rejection"
+    );
     assert_eq!(client.get_tally_bucket(&election_id, &vote, &bucket), 1u64);
 
     // ── Audit summary ──
@@ -148,33 +212,53 @@ fn e2e_r0_full_flow() {
     assert_eq!(audit.mode, ElectionMode::R0);
 
     // ── Write contract-observation.json ──
+    let obs_dir = e0_dir().join("evidence");
+    std::fs::create_dir_all(&obs_dir).unwrap();
     let mut s = std::string::String::new();
     s.push_str("{\n");
     s.push_str("  \"schema\": \"contract-observation-v1\",\n");
-    s.push_str(&std::format!("  \"election_id\": \"{}\",\n", hex::encode(&election_id.to_array())));
-    s.push_str(&std::format!("  \"state_root\": \"{}\",\n", hex::encode(&state_root.to_array())));
-    s.push_str(&std::format!("  \"association_root\": \"{}\",\n", hex::encode(&assoc_root.to_array())));
-    s.push_str(&std::format!("  \"election_scope\": \"{}\",\n", hex::encode(&scope.to_array())));
-    s.push_str(&std::format!("  \"nullifier_hash\": \"{}\",\n", hex::encode(&nullifier_bytes.to_array())));
+    s.push_str(&std::format!(
+        "  \"election_id\": \"{}\",\n",
+        hex::encode(election_id.to_array())
+    ));
+    s.push_str(&std::format!(
+        "  \"state_root\": \"{}\",\n",
+        hex::encode(state_root.to_array())
+    ));
+    s.push_str(&std::format!(
+        "  \"association_root\": \"{}\",\n",
+        hex::encode(assoc_root.to_array())
+    ));
+    s.push_str(&std::format!(
+        "  \"election_scope\": \"{}\",\n",
+        hex::encode(scope.to_array())
+    ));
+    s.push_str(&std::format!(
+        "  \"nullifier_hash\": \"{}\",\n",
+        hex::encode(nullifier_bytes.to_array())
+    ));
     s.push_str(&std::format!("  \"vote\": {},\n", vote));
     s.push_str(&std::format!("  \"option_count\": {},\n", option_count));
     s.push_str(&std::format!("  \"tally_bucket\": {},\n", bucket));
     s.push_str(&std::format!("  \"tally\": {{ \"{}\": 1 }},\n", vote));
     s.push_str("  \"result\": { \"tally\": [1] },\n");
-    s.push_str(&std::format!("  \"proof_sha256\": \"{}\",\n", hex::encode(&expected_proof_hash.to_array())));
-    s.push_str(&std::format!("  \"public_signals_sha256\": \"{}\",\n", hex::encode(&expected_pub_hash.to_array())));
-    s.push_str("  \"event_contains_proof_hash\": true,\n");
-    s.push_str("  \"event_contains_public_signals_hash\": true,\n");
+    s.push_str(&std::format!(
+        "  \"proof_sha256\": \"{}\",\n",
+        hex::encode(expected_proof_hash.to_array())
+    ));
+    s.push_str(&std::format!(
+        "  \"public_signals_sha256\": \"{}\",\n",
+        hex::encode(expected_pub_hash.to_array())
+    ));
+    s.push_str("  \"event_matches_expected\": true,\n");
     s.push_str("  \"duplicate_outcome\": \"NullifierAlreadyUsed\",\n");
     s.push_str("  \"duplicate_no_state_mutation\": true,\n");
     s.push_str("  \"duplicate_no_new_events\": true,\n");
-    s.push_str("  \"mutated_proof_outcome\": \"rejected\",\n");
+    s.push_str("  \"mutated_proof_outcome\": \"ProofVerificationFailed\",\n");
     s.push_str("  \"mutated_no_state_mutation\": true,\n");
     s.push_str("  \"mutated_no_new_events\": true\n");
     s.push_str("}\n");
-    let path = e0_dir().join("evidence").join("contract-observation.json");
-    std::fs::create_dir_all(path.parent().unwrap()).ok();
-    std::fs::write(&path, s.as_bytes()).unwrap();
+    std::fs::write(obs_dir.join("contract-observation.json"), s.as_bytes()).unwrap();
 }
 
 #[test]
@@ -196,9 +280,12 @@ fn e2e_r0_vk_hash_binding() {
     let contract_id = env.register(
         ZkQuorumContract,
         (
-            admin.clone(), verifier_id.clone(),
-            vk_bytes.clone(), vk_bytes.clone(),
-            wrong_hash.clone(), wrong_hash.clone(),
+            admin.clone(),
+            verifier_id.clone(),
+            vk_bytes.clone(),
+            vk_bytes.clone(),
+            wrong_hash.clone(),
+            wrong_hash.clone(),
         ),
     );
     let client = ZkQuorumContractClient::new(&env, &contract_id);
@@ -212,9 +299,16 @@ fn e2e_r0_vk_hash_binding() {
     let election_id = BytesN::from_array(&env, &[0xE1u8; 32]);
     env.mock_all_auths();
     client.open_election(
-        &admin, &election_id, &scope, &ElectionMode::R0,
-        &state_root, &assoc_root, &option_count,
-        &500u64, &5000u64, &0u64,
+        &admin,
+        &election_id,
+        &scope,
+        &ElectionMode::R0,
+        &state_root,
+        &assoc_root,
+        &option_count,
+        &500u64,
+        &5000u64,
+        &0u64,
     );
 
     let result = client.try_cast(&election_id, &proof_bytes, &public_bytes);

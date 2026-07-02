@@ -8,7 +8,6 @@
 //!   Public: len u32 BE | Fr[i] 32-byte BE
 
 use ark_bls12_381::{Fq, Fq2, Fr, G1Affine, G2Affine};
-use ark_ec::AffineRepr;
 use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::CanonicalSerialize;
 use num_bigint::BigUint;
@@ -98,8 +97,23 @@ lazy_static::lazy_static! {
     ).unwrap();
 }
 
-/// Parse a decimal string to BigUint, rejecting non-decimal characters.
+/// Parse a decimal string to BigUint, rejecting leading zeros and non-canonical forms.
 fn parse_decimal(s: &str) -> Result<BigUint, Error> {
+    if s.is_empty() {
+        return Err(Error::Msg("Empty decimal string".into()));
+    }
+    // Reject leading zeros except for "0" itself
+    if s.len() > 1 && s.starts_with('0') {
+        return Err(Error::Msg(format!("Leading zeros not allowed: {}", s)));
+    }
+    // Reject sign characters
+    if s.starts_with('-') || s.starts_with('+') {
+        return Err(Error::Msg(format!("Signs not allowed: {}", s)));
+    }
+    // Must be only digits 0-9
+    if !s.chars().all(|c| c.is_ascii_digit()) {
+        return Err(Error::Msg(format!("Non-digit character in: {}", s)));
+    }
     BigUint::parse_bytes(s.as_bytes(), 10)
         .ok_or_else(|| Error::Msg(format!("Invalid decimal: {}", s)))
 }
@@ -250,7 +264,10 @@ pub fn convert_vk(vk: &VkJson) -> Result<Vec<u8>, Error> {
 
 pub fn convert_proof(proof: &ProofJson) -> Result<Vec<u8>, Error> {
     if proof.protocol != "groth16" {
-        return Err(Error::Msg(format!("Unsupported protocol: {}", proof.protocol)));
+        return Err(Error::Msg(format!(
+            "Unsupported protocol: {}",
+            proof.protocol
+        )));
     }
     if proof.curve != "bls12381" {
         return Err(Error::Msg(format!("Unsupported curve: {}", proof.curve)));
