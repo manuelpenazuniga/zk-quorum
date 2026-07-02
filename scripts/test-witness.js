@@ -7,7 +7,7 @@
 //
 // Usage: node scripts/test-witness.js
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -21,14 +21,15 @@ let passed = 0;
 let failed = 0;
 const failures = [];
 
-function isOpError(e) {
-    if (e.code === 'ENOENT') return true;
-    const stderr = ((e.stderr && e.stderr.toString()) || '').toLowerCase();
-    if (stderr.includes('enoent')) return true;
-    if (stderr.includes('no such file')) return true;
-    if (stderr.includes('cannot find module')) return true;
-    if (e.status !== null && e.status !== undefined) return false;
-    if (!e.stderr) return true;
+function isExpectedRejection(e, phase) {
+    if (e.code === 'ENOENT') return false;
+    if (e.signal) return false;
+    const combined = ((e.stderr || '') + (e.stdout || '')).toLowerCase();
+    if (!combined) return false;
+    if (/enoent|no such file|cannot find module|cannot open|not found|spawn/i.test(combined)) return false;
+    if (phase === 'witness' || phase === 'constraint') {
+        return /\[error\]|constraint|assert\b|error:/i.test(combined);
+    }
     return false;
 }
 
@@ -76,46 +77,52 @@ function runWitnessCheck(testName, circuitName, fixtureFile, expectPass, expectF
 
     fs.writeFileSync(inputJson, JSON.stringify(input));
 
+    function runSnarkjs(args, opts) {
+        try {
+            return execFileSync(SNARKJS, args, { cwd: ROOT, encoding: 'utf8', stdio: 'pipe', timeout: opts?.timeout || 30000, maxBuffer: 10 * 1024 * 1024 });
+        } catch (e) {
+            throw Object.assign(new Error('snarkjs failed'), { stderr: e.stderr || '', stdout: e.stdout || '', code: e.code || null, status: e.status, signal: e.signal || null, message: e.message });
+        }
+    }
+
     try {
-        // Generate witness
-        const wcCmd = `${SNARKJS} wc ${wasmFile} ${inputJson} ${wtnsFile}`;
-        execSync(wcCmd, { stdio: 'pipe', cwd: ROOT, timeout: 30000 });
+        runSnarkjs(['wc', wasmFile, inputJson, wtnsFile]);
 
         if (!expectPass) {
-            // If we expected failure but witness generation succeeded, check constraints manually
             try {
-                const checkCmd = `${SNARKJS} wchk ${r1csFile} ${wtnsFile}`;
-                execSync(checkCmd, { stdio: 'pipe', cwd: ROOT, timeout: 30000 });
+                runSnarkjs(['wchk', r1csFile, wtnsFile]);
                 fail(testName, 'negative test: witness generated and passed constraints (should have failed)');
-                } catch (e2) {
-                if (isOpError(e2)) {
-                    fail(testName, `operational error in constraint check: ${e2.message.slice(0,200)}`);
-                    return;
-                }
+                return;
+            } catch (e2) {
                 if (expectFailStage === 'witness') {
                     fail(testName, 'expected failure at witness generation, but witness succeeded and constraints failed');
-                } else {
-                    ok(testName + ' [correctly rejected at constraints]');
+                    return;
                 }
+                if (!isExpectedRejection(e2, 'constraint')) {
+                    fail(testName, `negative test: unrecognized constraint error — gate must fail: ${(e2.stderr || e2.message).slice(0,200)}`);
+                    return;
+                }
+                ok(testName + ' [correctly rejected at constraints]');
+                return;
             }
-        } else {
-            // Positive test: check constraints
-            const checkCmd = `${SNARKJS} wchk ${r1csFile} ${wtnsFile}`;
-            execSync(checkCmd, { stdio: 'pipe', cwd: ROOT, timeout: 30000 });
-            ok(testName);
         }
+
+        runSnarkjs(['wchk', r1csFile, wtnsFile]);
+        ok(testName);
     } catch (e) {
-        if (isOpError(e)) {
-            fail(testName, `operational error (spawn/IO/parse) — gate must fail: ${e.message.slice(0,200)}`);
+        if (expectPass) {
+            fail(testName, `positive test failed: ${(e.stderr || e.message).slice(0,200)}`);
             return;
         }
-        if (expectPass) {
-            fail(testName, `positive test failed: ${e.stderr ? e.stderr.toString().slice(0,200) : e.message}`);
-        } else if (!expectFailStage || expectFailStage === 'witness') {
-            ok(testName + ' [correctly rejected at witness gen]');
-        } else {
-            fail(testName, `expected constraints-level rejection, but witness gen failed: ${e.stderr ? e.stderr.toString().slice(0,200) : e.message}`);
+        if (expectFailStage && expectFailStage !== 'witness') {
+            fail(testName, `expected constraints-level rejection, but witness gen failed: ${(e.stderr || e.message).slice(0,200)}`);
+            return;
         }
+        if (!isExpectedRejection(e, 'witness')) {
+            fail(testName, `negative test: unrecognized witness error — gate must fail: ${(e.stderr || e.message).slice(0,200)}`);
+            return;
+        }
+        ok(testName + ' [correctly rejected at witness gen]');
     }
 }
 

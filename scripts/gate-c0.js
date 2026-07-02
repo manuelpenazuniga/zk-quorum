@@ -10,7 +10,7 @@
 // Usage: node scripts/gate-c0.js
 // Exit code: non-zero on any failure.
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -33,26 +33,40 @@ function sha256File(filePath) {
 }
 
 function snarkjsCmd(args, opts) {
-    const cmd = `"${SNARKJS}" ${args.join(' ')}`;
     try {
-        return execSync(`"${SNARKJS}" ${args.join(' ')}`, {
+        return execFileSync(SNARKJS, args, {
             cwd: ROOT, encoding: 'utf8', stdio: 'pipe',
-            timeout: opts?.timeout || 300000, ...opts
+            timeout: opts?.timeout || 300000, maxBuffer: opts?.maxBuffer || 50 * 1024 * 1024
         });
     } catch (e) {
-        return { error: true, stdout: e.stdout || '', stderr: e.stderr || '', message: e.message, code: e.code || null, status: e.status };
+        return { error: true, stdout: e.stdout || '', stderr: e.stderr || '', message: e.message, code: e.code || null, status: e.status, signal: e.signal || null };
     }
 }
 
-function isOperationalError(errObj) {
-    if (errObj.code === 'ENOENT') return true;
-    const stderr = (errObj.stderr || '').toLowerCase();
-    if (stderr.includes('enoent')) return true;
-    if (stderr.includes('no such file')) return true;
-    if (stderr.includes('cannot find module')) return true;
-    if (errObj.status !== null && errObj.status !== undefined) return false;
-    if (!errObj.stderr || errObj.stderr.length === 0) return true;
+function isExpectedRejection(errObj, phase) {
+    if (errObj.code === 'ENOENT') return false;
+    if (errObj.signal) return false;
+    const combined = ((errObj.stderr || '') + (errObj.stdout || '')).toLowerCase();
+    if (!combined) return false;
+    if (/enoent|no such file|cannot find module|cannot open|not found|spawn/i.test(combined)) return false;
+    if (phase === 'witness' || phase === 'constraint') {
+        return /\[error\]|constraint|assert\b|error:/i.test(combined);
+    }
+    if (phase === 'proof_verify' || phase === 'mutation') {
+        return /invalid|\[error\]|error:/i.test(combined);
+    }
     return false;
+}
+
+function checkRejection(errObj, phase, testName) {
+    if (!isExpectedRejection(errObj, phase)) {
+        const reason = errObj.code === 'ENOENT' ? 'snarkjs not found (ENOENT)'
+            : errObj.signal ? `killed by signal ${errObj.signal}`
+            : 'unrecognized/unexpected error output';
+        fail(testName, `negative test: ${reason} — gate must fail`);
+        return false;
+    }
+    return true;
 }
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
@@ -112,11 +126,9 @@ function proveAndVerify(testName, circuitName, fixtureFile, zkeyFile, vkCommitPa
     // Generate witness
     const wcRes = snarkjsCmd(['wc', wasmFile, inputJson, wtnsFile]);
     if (wcRes.error) {
-        if (isOperationalError(wcRes)) {
-            fail(testName, `operational error in witness gen: ${wcRes.message}`);
-        } else if (!expectPass) {
+        if (!expectPass && checkRejection(wcRes, 'witness', testName)) {
             ok(testName + ' [correctly rejected at witness gen]');
-        } else {
+        } else if (expectPass) {
             fail(testName, `witness gen failed: ${wcRes.stderr || wcRes.message}`);
         }
         return;
@@ -124,11 +136,9 @@ function proveAndVerify(testName, circuitName, fixtureFile, zkeyFile, vkCommitPa
 
     const chkRes = snarkjsCmd(['wchk', r1csFile, wtnsFile]);
     if (chkRes.error) {
-        if (isOperationalError(chkRes)) {
-            fail(testName, `operational error in constraint check: ${chkRes.message}`);
-        } else if (!expectPass) {
+        if (!expectPass && checkRejection(chkRes, 'constraint', testName)) {
             ok(testName + ' [correctly rejected at constraint check]');
-        } else {
+        } else if (expectPass) {
             fail(testName, `constraint check failed: ${chkRes.stderr || chkRes.message}`);
         }
         return;
@@ -192,9 +202,7 @@ function mutateProofAndVerify(testName, circuitName, zkeyFile, vkCommitPath, fix
 
     const verifyRes = snarkjsCmd(['g16v', vk, publicJson, mutatedProofJson]);
     if (verifyRes.error) {
-        if (isOperationalError(verifyRes)) {
-            fail(testName, `operational error in proof verification: ${verifyRes.message}`);
-        } else {
+        if (checkRejection(verifyRes, 'mutation', testName)) {
             ok(testName);
         }
     } else {
@@ -240,9 +248,7 @@ function mutateAndVerify(testName, circuitName, zkeyFile, vkCommitPath, fixtureF
     // Verify mutated — must fail
     const verifyRes = snarkjsCmd(['g16v', vk, mutatedPublicJson, proofJson]);
     if (verifyRes.error) {
-        if (isOperationalError(verifyRes)) {
-            fail(testName, `operational error in proof verification: ${verifyRes.message}`);
-        } else {
+        if (checkRejection(verifyRes, 'mutation', testName)) {
             ok(testName);
         }
     } else {
@@ -646,6 +652,30 @@ proveAndVerify(
 
 // ── 6. Fr round-trip and public signal order ─────────────────────────────────
 testFrRoundTrip();
+
+// ── 7. Error-classification regression auto-tests ─────────────────────────────
+console.log('\n7. Error Classification Regression Tests');
+{
+    // Test that a missing zkey (ENOENT) on negative test produces FAIL
+    const fakeErr = { error: true, code: 'ENOENT', stderr: '', stdout: '', message: 'spawn ENOENT', signal: null };
+    function testRegr(name, errObj, phase, expect) {
+        const result = isExpectedRejection(errObj, phase);
+        if (result === expect) {
+            ok(`regr: ${name}`);
+        } else {
+            fail(`regr: ${name}`, `isExpectedRejection returned ${result}, expected ${expect}`);
+        }
+    }
+    testRegr('ENOENT fails negative witness',    { error: true, code: 'ENOENT', stderr: '', stdout: '', message: 'spawn', signal: null }, 'witness', false);
+    testRegr('empty stderr fails negative',       { error: true, stderr: '', stdout: '', signal: null, status: 1 }, 'witness', false);
+    testRegr('signal kill fails negative',        { error: true, stderr: 'blah', stdout: '', signal: 'SIGKILL' }, 'witness', false);
+    testRegr('unknown text fails negative',       { error: true, stderr: 'some random text', stdout: '', signal: null, status: 1 }, 'witness', false);
+    testRegr('missing file fails negative',       { error: true, stderr: 'ENOENT: no such file', stdout: '', signal: null, status: 1 }, 'witness', false);
+    testRegr('witness assert passes negative',    { error: true, stderr: 'Error: assert error', stdout: '', signal: null, status: 1 }, 'witness', true);
+    testRegr('constraint tag passes negative',    { error: true, stderr: '[ERROR] Constraint', stdout: '', signal: null, status: 1 }, 'constraint', true);
+    testRegr('invalid proof passes mutation',     { error: true, stderr: '[ERROR] SNARKJS: Invalid Proof', stdout: '', signal: null, status: 1 }, 'mutation', true);
+    testRegr('proof error passes mutation',       { error: true, stderr: 'Error: verification failed', stdout: '', signal: null, status: 1 }, 'mutation', true);
+}
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 console.log(`\n====================================`);
