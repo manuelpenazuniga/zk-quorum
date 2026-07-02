@@ -72,8 +72,9 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 - Foundation reproducible: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y `wasm32v1-none`.
 - Worktrees aislados: `agent/crypto`, `agent/contract` y `agent/product`.
-- Producto U0 fue auditado por Gemini 3.1 Pro High e integrado con 236 tests.
-  U-Pre con prover real en navegador sigue pendiente.
+- Producto U0-code fue auditado e integrado. U-Pre Chromium cerró con prover
+  real, invalid witness, cancelación y recuperación; auditoría final Gemini
+  3.1 Pro High sin findings.
 - C1 `3dd2304` fue auditado por Gemini 3.1 Pro High con cero findings e
   integrado como `7a681f0` + `6daf7a5`. El gate verifier-first pasa en `main`.
 - C0 fue remediado, auditado e integrado. El repositorio y release
@@ -81,7 +82,7 @@ reveal, pero no coercion resistance y puede tener non-reveals.
   URLs default.
 - E0 R0 fue auditado por Gemini 3.1 Pro High e integrado. El runner real y su
   replay fail-closed pasan en `main`, sin Critical/High.
-- No hay U-Pre, testnet, carga ni A0.
+- No hay testnet, carga ni A0.
 - `spike/package.json`, su lockfile y cualquier otro untracked ajeno deben
   preservarse y nunca entrar por accidente a commits de las lanes.
 
@@ -108,5 +109,5 @@ completos fuera del chat, audits incrementales y audit integral en A0.
 
 ## Gate actual
 
-P1/foundation/C0/C1/E0 están cerrados; U0-code está integrado. El siguiente
-gate es U-Pre con prover real en navegador.
+P1/foundation/C0/C1/E0/U-Pre Chromium están cerrados; U0-code está integrado.
+El siguiente gate es T0 testnet R0.

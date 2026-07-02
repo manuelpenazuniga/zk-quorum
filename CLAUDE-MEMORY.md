@@ -75,8 +75,8 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 - `main` contiene plan, foundation, C0/C1, producto U0-code y E0.
 - Toolchain fijado: Node 24, Rust/Cargo 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y target `wasm32v1-none`.
-- Producto U0 fue auditado por Gemini 3.1 Pro High e integrado; 236 tests
-  pasan. U-Pre con prover real en navegador sigue pendiente.
+- Producto U0-code fue auditado e integrado. U-Pre Chromium cerró con prover
+  real, invalid witness, cancelación y recuperación; audit final sin findings.
 - C1 `3dd2304` fue auditado por Gemini 3.1 Pro High sin findings e integrado
   como `7a681f0` + `6daf7a5`. En `main` pasan 78/78, clippy y WASM.
 - C0 fue remediado, auditado e integrado. El repositorio y release
@@ -84,16 +84,16 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
   default y pasó el gate completo.
 - E0 R0 fue auditado por Gemini 3.1 Pro High e integrado. En `main` pasan el
   runner E2E real, replay 25/25 y 16 corrupciones negativas; 0 Critical/High.
-- U-Pre, testnet, carga, A0 y evidencia final siguen pendientes.
+- Testnet, carga, A0 y evidencia final siguen pendientes.
 - `spike/package.json`, su lockfile y otros untracked ajenos deben preservarse.
 
 ## Siguiente gate
 
 Continuar secuencialmente con worktrees existentes y routing vigente:
 
-1. cerrar U-Pre con prover real en navegador;
-2. ejecutar testnet R0;
-3. cerrar R1, carga, A0 y submission.
+1. ejecutar T0 testnet R0;
+2. cerrar R1;
+3. ejecutar carga, A0 y submission.
 
 Detalles y acceptance tests:
 `docs/plan/OPEN-CODE-EXECUTION-LOG.md`.

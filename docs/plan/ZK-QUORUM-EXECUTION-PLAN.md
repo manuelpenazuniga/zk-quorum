@@ -1219,6 +1219,15 @@ Antes de cerrar U0:
 - verificar que ningún secret sale por red;
 - si falla, V4 Pro diagnostica antes de cambiar arquitectura o mover el prover.
 
+Estado al 2026-07-02: `CERRADO PARA CHROMIUM DESKTOP`. El navegador produjo
+proof R0 real en 895 ms, rechazó el witness inválido, canceló en 631 ms y
+recuperó con una nueva proof en 828 ms. Las cuatro pruebas pasaron. Peak memory
+no está disponible en la API observada y se registra como `unsupported`; 4192
+MB es solo el límite del heap. Solo hubo GET locales; dos URLs
+`chrome-extension://` fueron inyección ambiental de extensiones, no tráfico de
+la aplicación. Console quedó limpia y sin secretos. Gemini 3.1 Pro High:
+0 findings, `PASA`. No se afirma compatibilidad Safari/Firefox/móvil.
+
 ### Gate L0 — Carga
 
 Escalera:

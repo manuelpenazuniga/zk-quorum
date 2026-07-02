@@ -1755,3 +1755,82 @@ El hash de `proof.bin` cambia entre ejecuciones por la aleatoriedad de
 Groth16; el manifiesto y la observación lo fijan y comparan dentro de cada
 evidencia. E0 queda `APROBADO E INTEGRADO`. El siguiente gate de la ruta
 crítica es U-Pre con prover real en navegador.
+
+### 21.5 U-Pre Chromium real auditado e integrado
+
+DeepSeek V4 Pro implementó el prover browser en un worker real con
+`snarkjs=0.7.6`, staging fail-closed de los assets C0, encoding Soroban,
+cancelación por terminación del worker y un harness separado. Kimi no se usó.
+
+Cadena auditada en la lane:
+
+```text
+3f1b332 implementación inicial
+ecf94d8 bundle worker real, manifest obligatorio y signals exactas
+ad0f184 G2 wire order, VK raw hash y validator fail-closed
+8f218fa bfj 9.1.3, cancel/recovery, memoria y network validator
+```
+
+Codex rechazó antes del audit: worker TypeScript sin bundle, fallback mock,
+orden G2 incorrecto, VK reserializada antes de hashear, signal output sin
+comparar, cancel no verificable y runner pendiente con exit 0. El cross-check
+final sobre una proof real confirmó igualdad byte-a-byte:
+
+```text
+proof JS == Rust:  true, 384 bytes
+public JS == Rust: true, 196 bytes
+public SHA-256: 107b4451da4eeb71b7e90f9989f9f925550a77caba70be2614cf49f8cf1c82de
+```
+
+El primer audit Gemini encontró un High transitivo
+`snarkjs → bfj → jsonpath → underscore` y un Medium en el nombre de
+cancelación. Se mantuvo `snarkjs=0.7.6` y se fijó `bfj=9.1.3`, que elimina
+`jsonpath/underscore`; ambos audits npm quedaron en cero vulnerabilidades.
+
+Evidencia Chromium observada por el usuario:
+
+```text
+valid-r0:       PASS, 895 ms, 6 signals, proof 384 bytes
+invalid-witness: PASS, error sanitizado
+cancel-r0:      PASS, 631 ms
+recovery-r0:    PASS, 828 ms, 6 signals, proof 384 bytes
+summary:        4 pass, 0 fail
+peak memory:    unsupported
+heap limit:     4192 MB (no es uso/pico)
+network:        solo GET; app en 127.0.0.1:8788
+console:        limpia, sin secretos
+```
+
+Dos GET `chrome-extension://` correspondieron a extensiones instaladas y se
+registran como ruido ambiental ajeno a la aplicación.
+
+La reauditoría Gemini 3.1 Pro High sobre `8f218fa` cerró:
+
+```text
+Critical: 0
+High:     0
+Medium:   0
+Low:      0
+VEREDICTO: PASA
+```
+
+Integración en `main`:
+
+```text
+c438a2d 98a45c8 d4eb40c 247b701
+```
+
+Repetición post-integración:
+
+```text
+staging: 10/10
+web tests: 68/68
+typecheck/build: PASS
+worker bundle: 456.52 KB JS
+npm audit root: 0 vulnerabilities
+npm audit web:  0 vulnerabilities
+snarkjs 0.7.6 + bfj 9.1.3 override
+```
+
+U-Pre queda `APROBADO E INTEGRADO PARA CHROMIUM DESKTOP`. No extiende claims a
+Safari, Firefox ni móvil. El siguiente gate de ruta crítica es T0 testnet R0.
