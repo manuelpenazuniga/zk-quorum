@@ -1886,6 +1886,7 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-serialize",
+ "hex",
  "soroban-poseidon",
  "soroban-sdk",
  "soroban-sdk-macros",

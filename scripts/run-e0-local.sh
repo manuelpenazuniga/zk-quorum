@@ -8,16 +8,13 @@
 #   4. Build witness from r0-vote-0 fixture
 #   5. Generate Groth16 proof
 #   6. snarkjs verify
-#   7. circom2soroban: convert VK / proof / public → canonical Soroban bytes
-#   8. Build verifier-first (WASM)
-#   9. Run Soroban Env e2e tests (real proof → cast → duplicate → tally)
-#  10. Evidence bundle + replay
-#
-# Can use ZKQ_CIRCOM_BIN to point to a circom binary; falls back to canonical
-# bootstrap path (.bootstrap/circom/v2.2.3/circom).
+#   7. Build circom2soroban converter (Rust)
+#   8. circom2soroban: convert VK / proof / public → canonical Soroban bytes
+#   9. Build verifier-first (WASM)
+#  10. Run Soroban Env e2e tests (real proof → cast → duplicate → tally → obs)
+#  11. Evidence bundle + standalone replay
 #
 # Outputs: tmp/e0/
-# Replay:  tmp/e0/evidence/
 #
 # Usage: bash scripts/run-e0-local.sh
 set -euo pipefail
@@ -29,12 +26,15 @@ EVIDENCE_DIR="${E0_DIR}/evidence"
 
 cd "$PROJECT_DIR"
 
+# ── Start clean ──
+rm -rf "$E0_DIR"
+mkdir -p "$E0_DIR" "$EVIDENCE_DIR"
+
 # ── Helpers ──
 ok()   { printf '  [OK] %s\n' "$*"; }
 fail() { printf '  [FAIL] %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*"; }
 
-# ── SHA-256 helper (Node.js, portable across macOS/Linux) ──
 sha256_file() {
     node -e "
 const fs = require('fs');
@@ -46,13 +46,12 @@ console.log(crypto.createHash('sha256').update(buf).digest('hex'));
 
 # ─── 1. Toolchain checks ─────────────────────────────────────────────────
 
-info "Step 1/10: Toolchain checks"
+info "Step 1/11: Toolchain checks"
 
-# Node
-NODE_ACTUAL=$(node --version | sed 's/^v//' | cut -d. -f1)
-REQUIRED_NODE=24
-if [ "$NODE_ACTUAL" -lt "$REQUIRED_NODE" ]; then
-    fail "Node >= ${REQUIRED_NODE} required, found $(node --version)"
+# Node 24 exactly
+NODE_MAJOR=$(node --version | sed 's/^v//' | cut -d. -f1)
+if [ "$NODE_MAJOR" != "24" ]; then
+    fail "Node major version must be exactly 24, found $(node --version)"
 fi
 ok "Node $(node --version)"
 
@@ -97,102 +96,93 @@ if [ "$RUST_ACTUAL" != "1.96" ]; then
 fi
 ok "Rust ${RUST_ACTUAL}"
 
-# wasm target
 if ! rustup target list --installed 2>/dev/null | grep -q 'wasm32v1-none'; then
     fail "target wasm32v1-none not installed"
 fi
 ok "Target wasm32v1-none"
-
 echo ""
 
 # ─── 2. Fetch setup assets ───────────────────────────────────────────────
 
-info "Step 2/10: Fetch setup assets"
+info "Step 2/11: Fetch setup assets"
 node scripts/fetch-setup-assets.js
 ok "Setup assets verified"
 echo ""
 
 # ─── 3. Compile circuits from clean ──────────────────────────────────────
 
-info "Step 3/10: Compile R0 circuit from clean"
+info "Step 3/11: Compile R0 circuit from clean"
 rm -rf circuits/build/public-vote
 mkdir -p circuits/build/public-vote
 ${CIRCOM} --prime bls12381 --r1cs --sym --wasm \
     --output circuits/build/public-vote \
     circuits/public-vote/main.circom
 
-# Verify R1CS hash against manifest
-R1CS_FILE="circuits/build/public-vote/main.r1cs"
 R1CS_EXPECTED=$(node -p "require('./circuits/artifacts/manifests/public-vote-r0.json').r1cs.sha256")
-R1CS_ACTUAL=$(sha256_file "$R1CS_FILE")
+R1CS_ACTUAL=$(sha256_file circuits/build/public-vote/main.r1cs)
 if [ "$R1CS_ACTUAL" != "$R1CS_EXPECTED" ]; then
-    fail "R1CS SHA mismatch: got ${R1CS_ACTUAL}"
+    fail "R1CS SHA mismatch"
 fi
-ok "R1CS compiled and SHA-256 matches manifest"
+ok "R1CS compiled and verified"
 echo ""
 
 # ─── 4. Build witness ────────────────────────────────────────────────────
 
-info "Step 4/10: Build witness from r0-vote-0.json"
-mkdir -p "$E0_DIR"
-WASM_FILE="circuits/build/public-vote/main_js/main.wasm"
-INPUT_FILE="circuits/artifacts/fixtures/r0-vote-0.json"
-WITNESS_FILE="${E0_DIR}/r0.wtns"
-
-# The fixture has both public and private inputs; snarkjs will use all of them
-# to compute the witness. Output signals (nullifierHash) are computed.
-${SNARKJS} wtns calculate "$WASM_FILE" "$INPUT_FILE" "$WITNESS_FILE"
+info "Step 4/11: Build witness from r0-vote-0.json"
+${SNARKJS} wtns calculate circuits/build/public-vote/main_js/main.wasm \
+    circuits/artifacts/fixtures/r0-vote-0.json "${E0_DIR}/r0.wtns"
 ok "Witness generated"
 echo ""
 
 # ─── 5. Generate Groth16 proof ───────────────────────────────────────────
 
-info "Step 5/10: Generate Groth16 proof"
-ZKEY_FILE="tmp/setup/r0_final.zkey"
-PROOF_JSON="${E0_DIR}/proof.json"
-PUBLIC_JSON="${E0_DIR}/public.json"
-
-${SNARKJS} groth16 prove "$ZKEY_FILE" "$WITNESS_FILE" "$PROOF_JSON" "$PUBLIC_JSON"
+info "Step 5/11: Generate Groth16 proof"
+${SNARKJS} groth16 prove tmp/setup/r0_final.zkey "${E0_DIR}/r0.wtns" \
+    "${E0_DIR}/proof.json" "${E0_DIR}/public.json"
 ok "Proof generated"
 echo ""
 
 # ─── 6. snarkjs verify ───────────────────────────────────────────────────
 
-info "Step 6/10: snarkjs groth16 verify"
+info "Step 6/11: snarkjs groth16 verify"
 VK_JSON="circuits/artifacts/manifests/r0_vk.json"
-${SNARKJS} groth16 verify "$VK_JSON" "$PUBLIC_JSON" "$PROOF_JSON"
+${SNARKJS} groth16 verify "$VK_JSON" "${E0_DIR}/public.json" "${E0_DIR}/proof.json"
 ok "snarkjs verifies proof"
 echo ""
 
-# ─── 7. circom2soroban: convert to Soroban canonical bytes ────────────────
+# ─── 7. Build circom2soroban converter ────────────────────────────────────
 
-info "Step 7/10: Convert to Soroban canonical bytes"
-C2S="tools/circom2soroban/cli.js"
-node "$C2S" all "$VK_JSON" "$PROOF_JSON" "$PUBLIC_JSON" "$E0_DIR"
+info "Step 7/11: Build circom2soroban converter (Rust)"
+cargo build --manifest-path tools/circom2soroban/Cargo.toml --release
+ok "circom2soroban built"
+echo ""
+
+# ─── 8. Convert to Soroban canonical bytes ────────────────────────────────
+
+info "Step 8/11: Convert to Soroban canonical bytes"
+cargo run --manifest-path tools/circom2soroban/Cargo.toml --release -- \
+    all "$VK_JSON" "${E0_DIR}/proof.json" "${E0_DIR}/public.json" "$E0_DIR"
 VK_BIN="${E0_DIR}/vk.bin"
 PROOF_BIN="${E0_DIR}/proof.bin"
 PUBLIC_BIN="${E0_DIR}/public.bin"
-ok "Converted VK (${VK_BIN}) proof (${PROOF_BIN}) public (${PUBLIC_BIN})"
+ok "Converted to canonical bytes"
 echo ""
 
-# ─── 8. Build verifier-first ─────────────────────────────────────────────
+# ─── 9. Build verifier-first ─────────────────────────────────────────────
 
-info "Step 8/10: Build verifier-first (WASM)"
+info "Step 9/11: Build verifier-first (WASM)"
 bash scripts/build-verifier-first.sh
 ok "Verifier-first build complete"
 echo ""
 
-# ─── 9. Run Soroban Env e2e tests ────────────────────────────────────────
+# ─── 10. Run Soroban Env e2e tests ───────────────────────────────────────
 
-info "Step 9/10: Run Soroban Env e2e tests (real proof integration)"
-
+info "Step 10/11: Run Soroban Env e2e tests"
 cargo test \
     --manifest-path contracts/zk-quorum/Cargo.toml \
     --release \
     -- e2e \
     2>&1 | tail -20
-
-# Check exit code
 E2E_EXIT=${PIPESTATUS[0]}
 if [ "$E2E_EXIT" -ne 0 ]; then
     fail "E2E tests failed"
@@ -200,15 +190,13 @@ fi
 ok "E2E tests passed"
 echo ""
 
-# ─── 10. Evidence bundle + replay ────────────────────────────────────────
+# ─── 11. Evidence bundle + replay ────────────────────────────────────────
 
-info "Step 10/10: Evidence bundle and replay"
+info "Step 11/11: Evidence bundle and standalone replay"
 
-mkdir -p "$EVIDENCE_DIR"
-
-# Copy artifacts
-cp "$PROOF_JSON" "$EVIDENCE_DIR/proof.json"
-cp "$PUBLIC_JSON" "$EVIDENCE_DIR/public.json"
+# Copy artifacts into evidence
+cp "${E0_DIR}/proof.json" "$EVIDENCE_DIR/proof.json"
+cp "${E0_DIR}/public.json" "$EVIDENCE_DIR/public.json"
 cp "$VK_BIN" "$EVIDENCE_DIR/vk.bin"
 cp "$PROOF_BIN" "$EVIDENCE_DIR/proof.bin"
 cp "$PUBLIC_BIN" "$EVIDENCE_DIR/public.bin"
@@ -218,32 +206,10 @@ VK_SHA=$(sha256_file "$VK_BIN")
 PROOF_SHA=$(sha256_file "$PROOF_BIN")
 PUBLIC_SHA=$(sha256_file "$PUBLIC_BIN")
 
-# Extract public signal values for the summary
-PUBLIC_VALUES=$(node -p "JSON.stringify(require('${PUBLIC_JSON}'))")
-
 # Write manifest
-MANIFEST="${EVIDENCE_DIR}/manifest.json"
 node -e "
 const fs = require('fs');
-const manifest = {
-    gate: 'E0-LOCAL-R0',
-    circuit: 'PublicVoteR0',
-    schema: 'PUBLIC_SCHEMA_V1_R0',
-    depth: 10,
-    max_options: 16,
-    vk_sha256: '${VK_SHA}',
-    proof_sha256: '${PROOF_SHA}',
-    public_sha256: '${PUBLIC_SHA}',
-    public_signals: JSON.parse('${PUBLIC_VALUES//\'/\'\\\'\'}'),
-    artifacts: ['proof.json','public.json','vk.bin','proof.bin','public.bin'],
-    timestamp: new Date().toISOString()
-};
-fs.writeFileSync('${MANIFEST}', JSON.stringify(manifest, null, 2));
-" 2>/dev/null || true
-# Write manifest with node script
-node -e "
-const fs = require('fs');
-const pub = JSON.parse(fs.readFileSync('${PUBLIC_JSON}','utf8'));
+const pub = JSON.parse(fs.readFileSync('${E0_DIR}/public.json','utf8'));
 const m = {
     gate: 'E0-LOCAL-R0',
     circuit: 'PublicVoteR0',
@@ -254,37 +220,28 @@ const m = {
     proof_sha256: '${PROOF_SHA}',
     public_sha256: '${PUBLIC_SHA}',
     public_signals: pub,
-    artifacts: ['proof.json','public.json','vk.bin','proof.bin','public.bin'],
+    artifacts: ['proof.json','public.json','vk.bin','proof.bin','public.bin','contract-observation.json'],
     timestamp: new Date().toISOString()
 };
-fs.writeFileSync('${MANIFEST}', JSON.stringify(m, null, 2));
+fs.writeFileSync('${EVIDENCE_DIR}/manifest.json', JSON.stringify(m, null, 2));
 "
-ok "Evidence manifest written to ${MANIFEST}"
+ok "Evidence manifest written"
 
-# ── Replay: second snarkjs verify + hash comparison ──
-info "Replay verification"
-${SNARKJS} groth16 verify "$VK_JSON" "${EVIDENCE_DIR}/public.json" "${EVIDENCE_DIR}/proof.json"
-ok "Replay: snarkjs verify passes"
-
-REPLAY_VK_SHA=$(sha256_file "${EVIDENCE_DIR}/vk.bin")
-REPLAY_PROOF_SHA=$(sha256_file "${EVIDENCE_DIR}/proof.bin")
-REPLAY_PUBLIC_SHA=$(sha256_file "${EVIDENCE_DIR}/public.bin")
-
-if [ "$REPLAY_VK_SHA" != "$VK_SHA" ]; then fail "Replay VK hash mismatch"; fi
-if [ "$REPLAY_PROOF_SHA" != "$PROOF_SHA" ]; then fail "Replay proof hash mismatch"; fi
-if [ "$REPLAY_PUBLIC_SHA" != "$PUBLIC_SHA" ]; then fail "Replay public hash mismatch"; fi
-ok "Replay: all hashes match"
+# Standalone replay
+info "Running standalone replay"
+node scripts/replay-e0.js "$EVIDENCE_DIR"
+REPLAY_EXIT=$?
+if [ "$REPLAY_EXIT" -ne 0 ]; then
+    fail "Standalone replay failed"
+fi
+ok "Standalone replay passed"
 
 echo ""
 echo "============================================"
-echo "E0-LOCAL-R0: PASS"
+echo "E0-LOCAL-R0: ALL GATES PASS"
 echo "============================================"
 echo ""
-echo "Summary:"
-echo "  VK SHA-256:       ${VK_SHA}"
-echo "  Proof SHA-256:    ${PROOF_SHA}"
-echo "  Public SHA-256:   ${PUBLIC_SHA}"
-echo "  Evidence:         ${EVIDENCE_DIR}"
-echo ""
-echo "Public signals:"
-cat "$PUBLIC_JSON"
+echo "Evidence: $EVIDENCE_DIR"
+echo "VK SHA-256:       $VK_SHA"
+echo "Proof SHA-256:    $PROOF_SHA"
+echo "Public SHA-256:   $PUBLIC_SHA"
