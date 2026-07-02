@@ -200,18 +200,9 @@ impl Proof {
             Ok(arr)
         }
 
-        let a = G1Affine::from_array(
-            env,
-            &take_array::<G1_SERIALIZED_SIZE>(bytes, &mut pos)?,
-        );
-        let b = G2Affine::from_array(
-            env,
-            &take_array::<G2_SERIALIZED_SIZE>(bytes, &mut pos)?,
-        );
-        let c = G1Affine::from_array(
-            env,
-            &take_array::<G1_SERIALIZED_SIZE>(bytes, &mut pos)?,
-        );
+        let a = G1Affine::from_array(env, &take_array::<G1_SERIALIZED_SIZE>(bytes, &mut pos)?);
+        let b = G2Affine::from_array(env, &take_array::<G2_SERIALIZED_SIZE>(bytes, &mut pos)?);
+        let c = G1Affine::from_array(env, &take_array::<G1_SERIALIZED_SIZE>(bytes, &mut pos)?);
         Ok(Proof { a, b, c })
     }
 }
@@ -252,7 +243,9 @@ impl PublicSignals {
             return Err(Groth16Error::MalformedPublicSignals);
         }
         let mut pos: u32 = 0;
-        let len_end = pos.checked_add(4).ok_or(Groth16Error::MalformedPublicSignals)?;
+        let len_end = pos
+            .checked_add(4)
+            .ok_or(Groth16Error::MalformedPublicSignals)?;
         let len_slice = bytes.slice(pos..len_end);
         let mut len_arr = [0u8; 4];
         len_slice.copy_into_slice(&mut len_arr);

@@ -11,6 +11,7 @@ mod errors;
 mod events;
 mod storage;
 mod test;
+mod test_e2e;
 mod types;
 
 pub use errors::*;
