@@ -33,13 +33,20 @@ no afirma que el relayer productivo esté listo y no despliega el frontend.
 - Passphrase exacta: `Test SDF Network ; September 2015`.
 - RPC configurado por Stellar CLI; registrar URL efectiva sin headers secretos.
 - Stellar CLI: 27.0.0.
-- Source/admin/relayer común: identidad local `vv-testnet`.
+- Source/admin/relayer común: identidad local `zkq-t0-20260702`, guardada en
+  macOS Keychain.
 - Address público observado:
-  `GAGFELZYG2CNBOGXTGFZ6LQJOZPIPJSFU5FNFFRPCFK5WKR6RT6JRLPD`.
-- Saldo inicial observado: `9999.9841616` XLM testnet.
+  `GCWZZEAFBUN2S2WOV5FFBX4QVRA7AORQLMUHJDCIMZZCO24YDXVTLDAG`.
+- Saldo inicial observado: `10000.0000000` XLM testnet.
 - `vv-e2e2` queda como respaldo; no usar dos sources en una misma corrida.
+- `vv-testnet` fue eliminado del almacén local después de que un worker
+  ejecutara indebidamente `stellar keys show`; se considera comprometido y
+  queda prohibido reutilizarlo.
 - Nunca imprimir/exportar seed ni secret key. Los logs deben fallar si aparece
   un StrKey secreto `S...`.
+- Quedan explícitamente prohibidos `stellar keys show`, `stellar keys export`,
+  lectura de archivos de identidad y cualquier comando que revele material
+  secreto. Solo se permiten `stellar keys address` y `stellar keys ls`.
 - No usar mainnet, fondos reales, wallet del votante ni analytics.
 - Kimi K2.7 Code: deshabilitado.
 
@@ -73,7 +80,7 @@ Un comando `scripts/run-t0-testnet-r0.sh --prepare-only` debe:
 1. exigir Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6, Stellar CLI 27 y
    target `wasm32v1-none`;
 2. exigir `network=testnet` y rechazar mainnet/passphrase distinta;
-3. resolver únicamente el address público de `vv-testnet`;
+3. resolver únicamente el address público de `zkq-t0-20260702`;
 4. consultar ledger/RPC y balance público;
 5. descargar/verificar assets C0;
 6. ejecutar verifier-first desde limpio;
@@ -103,7 +110,7 @@ el script no despliega ni invoca.
 Desplegar una instancia nueva con constructor:
 
 ```text
-admin       = address público vv-testnet
+admin       = address público zkq-t0-20260702
 verifier    = contract ID verifier T0
 vk_r0       = raw tmp/t0/vk_r0.bin
 vk_r1       = raw tmp/t0/vk_r1.bin
@@ -150,7 +157,7 @@ reveal_closes_at = 0
 mode             = R0
 ```
 
-`open_election` requiere auth del mismo admin `vv-testnet`. Capturar tx/costo y
+`open_election` requiere auth del mismo admin `zkq-t0-20260702`. Capturar tx/costo y
 leer `get_election` para comparar todos los campos.
 
 ## 7. Proof y serialización
@@ -279,4 +286,3 @@ de replay mantiene el gate en `NO-PASA`.
 - GPT-5.5 high: no se usa en T0 salvo que aparezcan fondos reales o cambios al
   verifier/contrato auditado.
 - Kimi K2.7 Code: no usar.
-
