@@ -10,7 +10,6 @@ const { execSync } = require('child_process');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const ROOT = path.resolve(__dirname, '..');
 const CIRCOM = resolveCircom(ROOT);
 
 function resolveCircom(root) {

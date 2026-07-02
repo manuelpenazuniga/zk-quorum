@@ -11,7 +11,6 @@ const crypto = require('crypto');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const ROOT = path.resolve(__dirname, '..');
 const CIRCOM = resolveCircom(ROOT);
 
 function resolveCircom(root) {
