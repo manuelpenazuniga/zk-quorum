@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 # ZK-Quorum C0 gate — clean-build reproducibility orchestrator.
-# Order: clean → compile → fixtures → witness → Groth16 setup → gate → manifests → Rust
+# Order: clean → compile → fixtures → witness → fetch assets → gate → manifests → Rust
 #
 # Does NOT use git cleanliness check. Compares only owned generated paths
 # or explicit hashes against committed manifests.
+#
+# Assets are fetched from an immutable source; never regenerated here.
+# Set ZKQ_SETUP_BASE_URL to override the default release URL, or let the
+# default point at the canonical GitHub release.
 #
 # Usage: bash scripts/run-all-tests.sh
 # Exit code: non-zero on first failure.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+readonly RELEASE_SOURCE="$(pwd)/circuits/.release-assets/c0-setup-v1"
+if [ -z "${ZKQ_SETUP_BASE_URL:-}" ] && [ -d "${RELEASE_SOURCE}" ]; then
+    export ZKQ_SETUP_BASE_URL="file://${RELEASE_SOURCE}"
+fi
 
 echo "============================================"
 echo "ZK-Quorum C0 Clean-Build Reproducibility"
@@ -62,13 +71,13 @@ echo ""
 # ── Clean build artifacts ────────────────────────────────────────────────────
 echo "=== Cleaning build artifacts ==="
 rm -rf circuits/build tmp
-mkdir -p tmp/setup tmp/gate circuits/build/public-vote circuits/build/commit-vote
-echo "[OK] build artifacts cleaned, directories recreated"
+echo "[OK] circuits/build and tmp removed (source assets preserved)"
 echo ""
 
 # ── Step 1: Compile circuits ─────────────────────────────────────────────────
 echo "=== Step 1: Compile circuits ==="
 CIRCOM=".bootstrap/bin/circom"
+mkdir -p circuits/build/public-vote circuits/build/commit-vote
 
 echo "  Compiling R0..."
 ${CIRCOM} --prime bls12381 --r1cs --sym --wasm --output circuits/build/public-vote \
@@ -128,9 +137,6 @@ echo ""
 echo "=== Step 11: Rust wasm32v1-none check ==="
 cargo check --manifest-path crates/credential/Cargo.toml --target wasm32v1-none --no-default-features
 echo ""
-
-# ── Clean up tmp ─────────────────────────────────────────────────────────────
-rm -rf tmp
 
 echo ""
 echo "============================================"

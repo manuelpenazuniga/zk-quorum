@@ -21,6 +21,17 @@ let passed = 0;
 let failed = 0;
 const failures = [];
 
+function isOpError(e) {
+    if (e.code === 'ENOENT') return true;
+    const stderr = ((e.stderr && e.stderr.toString()) || '').toLowerCase();
+    if (stderr.includes('enoent')) return true;
+    if (stderr.includes('no such file')) return true;
+    if (stderr.includes('cannot find module')) return true;
+    if (e.status !== null && e.status !== undefined) return false;
+    if (!e.stderr) return true;
+    return false;
+}
+
 function log(msg) { console.log(`  ${msg}`); }
 function ok(name) { console.log(`  ✓ ${name}`); passed++; }
 function fail(name, reason) {
@@ -77,8 +88,7 @@ function runWitnessCheck(testName, circuitName, fixtureFile, expectPass, expectF
                 execSync(checkCmd, { stdio: 'pipe', cwd: ROOT, timeout: 30000 });
                 fail(testName, 'negative test: witness generated and passed constraints (should have failed)');
                 } catch (e2) {
-                const isOpError2 = !(e2.status !== null || (e2.stderr && e2.stderr.length > 0));
-                if (isOpError2) {
+                if (isOpError(e2)) {
                     fail(testName, `operational error in constraint check: ${e2.message.slice(0,200)}`);
                     return;
                 }
@@ -95,8 +105,7 @@ function runWitnessCheck(testName, circuitName, fixtureFile, expectPass, expectF
             ok(testName);
         }
     } catch (e) {
-        const isOpError = !(e.status !== null || (e.stderr && e.stderr.length > 0));
-        if (isOpError) {
+        if (isOpError(e)) {
             fail(testName, `operational error (spawn/IO/parse) — gate must fail: ${e.message.slice(0,200)}`);
             return;
         }

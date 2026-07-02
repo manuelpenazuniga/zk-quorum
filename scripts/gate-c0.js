@@ -33,15 +33,26 @@ function sha256File(filePath) {
 }
 
 function snarkjsCmd(args, opts) {
-    const cmd = [SNARKJS, ...args].join(' ');
+    const cmd = `"${SNARKJS}" ${args.join(' ')}`;
     try {
         return execSync(`"${SNARKJS}" ${args.join(' ')}`, {
             cwd: ROOT, encoding: 'utf8', stdio: 'pipe',
             timeout: opts?.timeout || 300000, ...opts
         });
     } catch (e) {
-        return { error: true, stdout: e.stdout, stderr: e.stderr, message: e.message };
+        return { error: true, stdout: e.stdout || '', stderr: e.stderr || '', message: e.message, code: e.code || null, status: e.status };
     }
+}
+
+function isOperationalError(errObj) {
+    if (errObj.code === 'ENOENT') return true;
+    const stderr = (errObj.stderr || '').toLowerCase();
+    if (stderr.includes('enoent')) return true;
+    if (stderr.includes('no such file')) return true;
+    if (stderr.includes('cannot find module')) return true;
+    if (errObj.status !== null && errObj.status !== undefined) return false;
+    if (!errObj.stderr || errObj.stderr.length === 0) return true;
+    return false;
 }
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
@@ -72,7 +83,7 @@ function frToDec(v) { return v.toString(); }
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
 
-function proveAndVerify(testName, circuitName, fixtureFile, zkeyFile, vkFile, expectPass) {
+function proveAndVerify(testName, circuitName, fixtureFile, zkeyFile, vkCommitPath, expectPass) {
     const fixturePath = path.join(ROOT, 'circuits', 'artifacts', 'fixtures', fixtureFile);
     if (!fs.existsSync(fixturePath)) {
         fail(testName, `fixture not found: ${fixtureFile}`);
@@ -96,30 +107,27 @@ function proveAndVerify(testName, circuitName, fixtureFile, zkeyFile, vkFile, ex
     const wasmFile = path.join(ROOT, `circuits/build/${circuitName}/main_js/main.wasm`);
     const r1csFile = path.join(ROOT, `circuits/build/${circuitName}/main.r1cs`);
     const zkey = path.join(ROOT, zkeyFile);
-    const vk = path.join(ROOT, vkFile);
+    const vk = path.join(ROOT, 'circuits', 'artifacts', 'manifests', vkCommitPath);
 
     // Generate witness
     const wcRes = snarkjsCmd(['wc', wasmFile, inputJson, wtnsFile]);
     if (wcRes.error) {
-        const isOpError = !(wcRes.stderr && wcRes.stderr.length > 0);
-        if (!expectPass && !isOpError) {
-            ok(testName + ' [correctly rejected at witness gen]');
-        } else if (!expectPass && isOpError) {
+        if (isOperationalError(wcRes)) {
             fail(testName, `operational error in witness gen: ${wcRes.message}`);
+        } else if (!expectPass) {
+            ok(testName + ' [correctly rejected at witness gen]');
         } else {
             fail(testName, `witness gen failed: ${wcRes.stderr || wcRes.message}`);
         }
         return;
     }
 
-    // Check constraints
     const chkRes = snarkjsCmd(['wchk', r1csFile, wtnsFile]);
     if (chkRes.error) {
-        const isOpError = !(chkRes.stderr && chkRes.stderr.length > 0);
-        if (!expectPass && !isOpError) {
-            ok(testName + ' [correctly rejected at constraint check]');
-        } else if (!expectPass && isOpError) {
+        if (isOperationalError(chkRes)) {
             fail(testName, `operational error in constraint check: ${chkRes.message}`);
+        } else if (!expectPass) {
+            ok(testName + ' [correctly rejected at constraint check]');
         } else {
             fail(testName, `constraint check failed: ${chkRes.stderr || chkRes.message}`);
         }
@@ -151,7 +159,7 @@ function proveAndVerify(testName, circuitName, fixtureFile, zkeyFile, vkFile, ex
 
 // ── Proof mutation test: tampered proof coordinate/byte ──────────────────────
 
-function mutateProofAndVerify(testName, circuitName, zkeyFile, vkFile, fixtureFile, mutateFn) {
+function mutateProofAndVerify(testName, circuitName, zkeyFile, vkCommitPath, fixtureFile, mutateFn) {
     const tmpDir = path.join(ROOT, 'tmp', 'gate');
     fs.mkdirSync(tmpDir, { recursive: true });
     const baseName = testName.replace(/[^a-z0-9]/gi, '_');
@@ -168,15 +176,15 @@ function mutateProofAndVerify(testName, circuitName, zkeyFile, vkFile, fixtureFi
 
     const wasmFile = path.join(ROOT, `circuits/build/${circuitName}/main_js/main.wasm`);
     const zkey = path.join(ROOT, zkeyFile);
-    const vk = path.join(ROOT, vkFile);
+    const vk = path.join(ROOT, 'circuits', 'artifacts', 'manifests', vkCommitPath);
 
     saveJson(inputJson, input);
 
     const wcRes = snarkjsCmd(['wc', wasmFile, inputJson, wtnsFile]);
-    if (wcRes.error) { fail(testName, `witness failed: ${wcRes.stderr}`); return; }
+    if (wcRes.error) { fail(testName, `witness failed: ${wcRes.stderr || wcRes.message}`); return; }
 
     const proveRes = snarkjsCmd(['g16p', zkey, wtnsFile, proofJson, publicJson]);
-    if (proveRes.error) { fail(testName, `prove failed: ${proveRes.stderr}`); return; }
+    if (proveRes.error) { fail(testName, `prove failed: ${proveRes.stderr || proveRes.message}`); return; }
 
     const proof = loadJson(proofJson);
     const mutatedProof = mutateFn(JSON.parse(JSON.stringify(proof)));
@@ -184,7 +192,11 @@ function mutateProofAndVerify(testName, circuitName, zkeyFile, vkFile, fixtureFi
 
     const verifyRes = snarkjsCmd(['g16v', vk, publicJson, mutatedProofJson]);
     if (verifyRes.error) {
-        ok(testName);
+        if (isOperationalError(verifyRes)) {
+            fail(testName, `operational error in proof verification: ${verifyRes.message}`);
+        } else {
+            ok(testName);
+        }
     } else {
         fail(testName, 'mutated proof verified (should have failed)');
     }
@@ -192,7 +204,7 @@ function mutateProofAndVerify(testName, circuitName, zkeyFile, vkFile, fixtureFi
 
 // ── Mutation test: tampered public signal ────────────────────────────────────
 
-function mutateAndVerify(testName, circuitName, zkeyFile, vkFile, fixtureFile, mutateSignalIdx, mutateFn) {
+function mutateAndVerify(testName, circuitName, zkeyFile, vkCommitPath, fixtureFile, mutateSignalIdx, mutateFn) {
     const tmpDir = path.join(ROOT, 'tmp', 'gate');
     fs.mkdirSync(tmpDir, { recursive: true });
     const baseName = testName.replace(/[^a-z0-9]/gi, '_');
@@ -209,15 +221,15 @@ function mutateAndVerify(testName, circuitName, zkeyFile, vkFile, fixtureFile, m
 
     const wasmFile = path.join(ROOT, `circuits/build/${circuitName}/main_js/main.wasm`);
     const zkey = path.join(ROOT, zkeyFile);
-    const vk = path.join(ROOT, vkFile);
+    const vk = path.join(ROOT, 'circuits', 'artifacts', 'manifests', vkCommitPath);
 
     saveJson(inputJson, input);
 
     const wcRes = snarkjsCmd(['wc', wasmFile, inputJson, wtnsFile]);
-    if (wcRes.error) { fail(testName, `witness failed: ${wcRes.stderr}`); return; }
+    if (wcRes.error) { fail(testName, `witness failed: ${wcRes.stderr || wcRes.message}`); return; }
 
     const proveRes = snarkjsCmd(['g16p', zkey, wtnsFile, proofJson, publicJson]);
-    if (proveRes.error) { fail(testName, `prove failed: ${proveRes.stderr}`); return; }
+    if (proveRes.error) { fail(testName, `prove failed: ${proveRes.stderr || proveRes.message}`); return; }
 
     // Mutate public signal
     const publicSignals = loadJson(publicJson);
@@ -228,7 +240,11 @@ function mutateAndVerify(testName, circuitName, zkeyFile, vkFile, fixtureFile, m
     // Verify mutated — must fail
     const verifyRes = snarkjsCmd(['g16v', vk, mutatedPublicJson, proofJson]);
     if (verifyRes.error) {
-        ok(testName);
+        if (isOperationalError(verifyRes)) {
+            fail(testName, `operational error in proof verification: ${verifyRes.message}`);
+        } else {
+            ok(testName);
+        }
     } else {
         fail(testName, 'mutated public signal verified (should have failed)');
     }
@@ -295,7 +311,7 @@ function testFrRoundTrip() {
     const r0Fixture = path.join(ROOT, 'circuits', 'artifacts', 'fixtures', 'r0-vote-0.json');
     const r1Fixture = path.join(ROOT, 'circuits', 'artifacts', 'fixtures', 'r1-vote-3-salt-42.json');
 
-    function quickProve(fixturePath, circuitName, zkeyFile, vkFile, outDir, label) {
+    function quickProve(fixturePath, circuitName, zkeyFile, vkCommitPath, outDir, label) {
         const raw = loadJson(fixturePath);
         delete raw._meta;
         const inputJson = path.join(outDir, `fr_input.json`);
@@ -307,7 +323,7 @@ function testFrRoundTrip() {
         const wasmFile = path.join(ROOT, `circuits/build/${circuitName}/main_js/main.wasm`);
         const r1csFile = path.join(ROOT, `circuits/build/${circuitName}/main.r1cs`);
         const zkey = path.join(ROOT, zkeyFile);
-        const vk = path.join(ROOT, vkFile);
+        const vk = path.join(ROOT, 'circuits', 'artifacts', 'manifests', vkCommitPath);
 
         const wcRes = snarkjsCmd(['wc', wasmFile, inputJson, wtnsFile]);
         if (wcRes.error) {
@@ -323,10 +339,10 @@ function testFrRoundTrip() {
     }
 
     const r0PublicJson = quickProve(r0Fixture, 'public-vote',
-        'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+        'tmp/setup/r0_final.zkey', 'r0_vk.json',
         path.join(ROOT, 'tmp', 'gate'), 'R0');
     const r1PublicJson = quickProve(r1Fixture, 'commit-vote',
-        'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json',
+        'tmp/setup/r1_final.zkey', 'r1_vk.json',
         path.join(ROOT, 'tmp', 'gate'), 'R1');
 
     if (r0PublicJson) {
@@ -445,38 +461,38 @@ for (const [label, manifest, zkeyPath] of [
 console.log('\n2. Positive Proof Verification');
 proveAndVerify(
     'R0 positive proof (vote=0)', 'public-vote', 'r0-vote-0.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', true
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', true
 );
 proveAndVerify(
     'R0 scope-a proof', 'public-vote', 'r0-scope-a.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', true
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', true
 );
 proveAndVerify(
     'R0 derived-scope proof', 'public-vote', 'r0-derived-scope.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', true
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', true
 );
 proveAndVerify(
     'R0 scope-b proof', 'public-vote', 'r0-scope-b.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', true
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', true
 );
 proveAndVerify(
     'R0 scope-c proof', 'public-vote', 'r0-scope-c.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', true
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', true
 );
 proveAndVerify(
     'R1 positive proof (vote=3)', 'commit-vote', 'r1-vote-3-salt-42.json',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json', true
+    'tmp/setup/r1_final.zkey', 'r1_vk.json', true
 );
 proveAndVerify(
     'R1 derived-scope proof', 'commit-vote', 'r1-derived-scope.json',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json', true
+    'tmp/setup/r1_final.zkey', 'r1_vk.json', true
 );
 
 // ── 3. Mutation tests — public signal tampering ──────────────────────────────
 console.log('\n3. Mutation Tests — Public Signal Tampering');
 mutateAndVerify(
     'R0 mutate vote (0→1)', 'public-vote',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+    'tmp/setup/r0_final.zkey', 'r0_vk.json',
     'r0-vote-0.json', 1,
     (orig) => {
         const v = BigInt(orig);
@@ -485,31 +501,31 @@ mutateAndVerify(
 );
 mutateAndVerify(
     'R0 mutate optionCount (5→4)', 'public-vote',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+    'tmp/setup/r0_final.zkey', 'r0_vk.json',
     'r0-vote-0.json', 2,
     () => '4'
 );
 mutateAndVerify(
     'R0 mutate stateRoot', 'public-vote',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+    'tmp/setup/r0_final.zkey', 'r0_vk.json',
     'r0-vote-0.json', 3,
     () => '9999999999999999999999999999999999999999999999999999999999999999'
 );
 mutateAndVerify(
     'R0 mutate electionScope', 'public-vote',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+    'tmp/setup/r0_final.zkey', 'r0_vk.json',
     'r0-vote-0.json', 5,
     () => '8888888888888888888888888888888888888888888888888888888888888888'
 );
 mutateAndVerify(
     'R1 mutate ballotCommitment', 'commit-vote',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json',
+    'tmp/setup/r1_final.zkey', 'r1_vk.json',
     'r1-vote-3-salt-42.json', 1,
     () => '9999999999999999999999999999999999999999999999999999999999999999'
 );
 mutateAndVerify(
     'R1 mutate electionScope', 'commit-vote',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json',
+    'tmp/setup/r1_final.zkey', 'r1_vk.json',
     'r1-vote-3-salt-42.json', 5,
     () => '8888888888888888888888888888888888888888888888888888888888888888'
 );
@@ -520,7 +536,7 @@ console.log('\n4. Proof Mutation Tests — Groth16 Coordinate Tampering');
 // R0 proof mutations
 mutateProofAndVerify(
     'R0 mutate pi_a[0] + 1', 'public-vote',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+    'tmp/setup/r0_final.zkey', 'r0_vk.json',
     'r0-vote-0.json',
     (proof) => {
         const v = BigInt(proof.pi_a[0]);
@@ -530,7 +546,7 @@ mutateProofAndVerify(
 );
 mutateProofAndVerify(
     'R0 mutate pi_a[1] + 1', 'public-vote',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+    'tmp/setup/r0_final.zkey', 'r0_vk.json',
     'r0-vote-0.json',
     (proof) => {
         const v = BigInt(proof.pi_a[1]);
@@ -540,7 +556,7 @@ mutateProofAndVerify(
 );
 mutateProofAndVerify(
     'R0 mutate pi_c[0] + 1', 'public-vote',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+    'tmp/setup/r0_final.zkey', 'r0_vk.json',
     'r0-vote-0.json',
     (proof) => {
         const v = BigInt(proof.pi_c[0]);
@@ -550,7 +566,7 @@ mutateProofAndVerify(
 );
 mutateProofAndVerify(
     'R0 mutate pi_b[0][0] + 1', 'public-vote',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json',
+    'tmp/setup/r0_final.zkey', 'r0_vk.json',
     'r0-vote-0.json',
     (proof) => {
         const v = BigInt(proof.pi_b[0][0]);
@@ -562,7 +578,7 @@ mutateProofAndVerify(
 // R1 proof mutations
 mutateProofAndVerify(
     'R1 mutate pi_a[0] + 1', 'commit-vote',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json',
+    'tmp/setup/r1_final.zkey', 'r1_vk.json',
     'r1-vote-3-salt-42.json',
     (proof) => {
         const v = BigInt(proof.pi_a[0]);
@@ -572,7 +588,7 @@ mutateProofAndVerify(
 );
 mutateProofAndVerify(
     'R1 mutate pi_c[0] + 1', 'commit-vote',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json',
+    'tmp/setup/r1_final.zkey', 'r1_vk.json',
     'r1-vote-3-salt-42.json',
     (proof) => {
         const v = BigInt(proof.pi_c[0]);
@@ -585,47 +601,47 @@ mutateProofAndVerify(
 console.log('\n5. Negative Witness Tests');
 proveAndVerify(
     'R0 wrong state path', 'public-vote', 'r0-wrong-root.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', false
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', false
 );
 proveAndVerify(
     'R0 vote=5/optionCount=5', 'public-vote', 'r0-vote-out-of-range.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', false
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', false
 );
 proveAndVerify(
     'R0 optionCount=0', 'public-vote', 'r0-zero-options.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', false
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', false
 );
 proveAndVerify(
     'R0 associationRoot=0', 'public-vote', 'r0-zero-asp.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', false
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', false
 );
 proveAndVerify(
     'R0 label=zero', 'public-vote', 'r0-label-zero.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', false
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', false
 );
 proveAndVerify(
     'R1 salt=0', 'commit-vote', 'r1-zero-salt.json',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json', false
+    'tmp/setup/r1_final.zkey', 'r1_vk.json', false
 );
 proveAndVerify(
     'R1 vote out of range', 'commit-vote', 'r1-vote-out-of-range.json',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json', false
+    'tmp/setup/r1_final.zkey', 'r1_vk.json', false
 );
 proveAndVerify(
     'R1 zero options', 'commit-vote', 'r1-zero-options.json',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json', false
+    'tmp/setup/r1_final.zkey', 'r1_vk.json', false
 );
 proveAndVerify(
     'R1 label zero', 'commit-vote', 'r1-label-zero.json',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json', false
+    'tmp/setup/r1_final.zkey', 'r1_vk.json', false
 );
 proveAndVerify(
     'R0 nullifierSecret=0', 'public-vote', 'r0-nullifier-zero.json',
-    'tmp/setup/r0_final.zkey', 'tmp/setup/r0_vk.json', false
+    'tmp/setup/r0_final.zkey', 'r0_vk.json', false
 );
 proveAndVerify(
     'R1 nullifierSecret=0', 'commit-vote', 'r1-nullifier-zero.json',
-    'tmp/setup/r1_final.zkey', 'tmp/setup/r1_vk.json', false
+    'tmp/setup/r1_final.zkey', 'r1_vk.json', false
 );
 
 // ── 6. Fr round-trip and public signal order ─────────────────────────────────

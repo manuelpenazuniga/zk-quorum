@@ -28,7 +28,7 @@
   "setup": {
     "ptau": {
       "file": "pot14_final.ptau",
-      "sha256": "5e3e716180b5703be7c70b09f7f93d24786a89292cfcb5cef56e1be10b493668",
+      "sha256": "25f790d3e910135f71985f198b67ca10c7365b334f631e1d5a0c3a02d1c6c71f",
       "bytes": 28315678,
       "curve": "bls12-381",
       "power": 14,
@@ -38,12 +38,12 @@
     },
     "zkey": {
       "file": "r0_final.zkey",
-      "sha256": "ce99d611a6ce449cfd4a225fa0bbdca5ebf5b320944c3da37d2eeb004a7cd6c1",
+      "sha256": "519cc5cb6f34227da36c0a11b75e7b684a3f2e85109b36e8485ea5adbd8330d1",
       "bytes": 9013530
     },
     "verification_key": {
       "file": "r0_vk.json",
-      "sha256": "526e1ab8ecd69a558ff75460b0357591f3a1cfb342ccbab24076771a4c686a04",
+      "sha256": "41b7bbaa90ff910fc9570cfae47799fe6bad2360aa9074b031fcfe5bd5c9e54f",
       "bytes": 5373
     },
     "commands": [
@@ -108,5 +108,5 @@
     "associationSiblings[10]",
     "associationIndex"
   ],
-  "timestamp": "2026-07-01T23:47:14Z"
+  "timestamp": "2026-07-01T23:56:42Z"
 }

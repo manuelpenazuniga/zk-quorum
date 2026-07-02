@@ -80,9 +80,10 @@ Thumbs.db
 *.swo
 *~
 
-# ── Logs and temp ─────────────────────────────────────────────────────────
-*.log
-logs/
+# ── Release assets — one-shot ceremony output, never versioned ──────────────
+# Persistent source for ZKQ_SETUP_BASE_URL=file://...
+circuits/.release-assets/
+
 tmp/
 temp/
 .tmp/

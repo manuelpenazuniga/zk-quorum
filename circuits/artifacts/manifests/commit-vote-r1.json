@@ -28,7 +28,7 @@
   "setup": {
     "ptau": {
       "file": "pot14_final.ptau",
-      "sha256": "5e3e716180b5703be7c70b09f7f93d24786a89292cfcb5cef56e1be10b493668",
+      "sha256": "25f790d3e910135f71985f198b67ca10c7365b334f631e1d5a0c3a02d1c6c71f",
       "bytes": 28315678,
       "curve": "bls12-381",
       "power": 14,
@@ -38,13 +38,13 @@
     },
     "zkey": {
       "file": "r1_final.zkey",
-      "sha256": "d95cf3d5643a38808f27975dceb4140da83e11e97c6cd5b73fe16a2b72211187",
+      "sha256": "7ce3539ef7a2a160386e961edfd316e3c8b2f155957e1b46ff19e015eac5a8fb",
       "bytes": 9655858
     },
     "verification_key": {
       "file": "r1_vk.json",
-      "sha256": "15b734cbe1dc6c23cbe4d00435e6fc3499113e00c253c695ac27256b2e1faa05",
-      "bytes": 5375
+      "sha256": "fe4e650d9633d42329971b8c07afca201c259c53f097fae7f2b359cecbe0463b",
+      "bytes": 5372
     },
     "commands": [
       "snarkjs powersoftau new bls12381 14 pot14_0000.ptau",
@@ -110,5 +110,5 @@
     "associationSiblings[10]",
     "associationIndex"
   ],
-  "timestamp": "2026-07-01T23:47:14Z"
+  "timestamp": "2026-07-01T23:56:42Z"
 }
