@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # ZK-Quorum U-Pre — Browser evidence collector for Chromium.
 #
-# Starts Vite in preview mode, opens Chromium via Puppeteer/Playwright,
-# runs the harness page, collects evidence, and validates 10 checks.
+# Starts Vite in preview mode, opens Chromium, runs harness, saves evidence.
 #
 # Prerequisites:
 #   1. npm ci completed in apps/web
 #   2. Assets staged: node scripts/stage-assets-to-public.js
 #   3. Node 24, Chromium installed
-#   4. npm install puppeteer (or npx puppeteer)
+#   4. npm install puppeteer (in apps/web or root)
 #
 # Evidence output: tmp/u-pre/
 #   manifest.json        — build/asset hashes and metadata
@@ -17,27 +16,9 @@
 #   console.json         — captured console output
 #   screenshot.png       — informational screenshot
 #
-# Usage: bash scripts/run-upre-browser.js [--chromium-path /path/to/chrome]
-#
-# PENDIENTE: This script is ready but requires a real Chromium browser.
-# The actual browser-driven evidence collection is gated on having a
-# browser automation tool (Puppeteer/Playwright) installed and a
-# display server available. The harness page at /harness.html is
-# fully functional and can be manually tested by running:
-#   cd apps/web && npx vite preview --port 8788
-#   Then open http://localhost:8788/harness.html in Chromium.
-#
-# Gate checklist (manual verification):
-#   1. Load harness → buttons enabled
-#   2. Click "Run valid R0" → proof generated, verify true
-#   3. Signals match fixture (check browser-result.json)
-#   4. Proof/public hashes non-null, byte lengths exact (384 / 196)
-#   5. Click "Run invalid witness" → fails with sanitized error
-#   6. Cancel during valid run → resolves in bounded time
-#   7. No POST/PUT/PATCH/DELETE requests during gate
-#   8. Only GET to localhost:8788 for HTML/JS/worker/WASM/zkey/VK/manifest
-#   9. No nullifierSecret, trapdoor, siblings, or witness in URL/DOM/console/storage
-#  10. Register user agent, duration, memory observed
+# Usage: bash scripts/run-upre-browser.sh [--prepare-only]
+#   --prepare-only: only stage/build/verify, skip browser execution
+#   Without --prepare-only: requires puppeteer + Chromium, fails if missing
 
 set -euo pipefail
 
@@ -46,29 +27,30 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 WEB_DIR="${PROJECT_DIR}/apps/web"
 EVIDENCE_DIR="${PROJECT_DIR}/tmp/u-pre"
 
+PREPARE_ONLY=false
+for arg in "$@"; do
+  if [ "$arg" = "--prepare-only" ]; then PREPARE_ONLY=true; fi
+done
+
 # ── Helpers ──
 ok()   { printf '  [OK] %s\n' "$*"; }
 fail() { printf '  [FAIL] %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*"; }
 
-# ── Check prerequisites ──
-
 info "U-Pre Browser Evidence Collector"
 echo ""
 
-# Check assets are staged
+# ── 1. Check assets are staged ──
 PUBLIC_ASSETS="${WEB_DIR}/public/upre-assets"
 if [ ! -f "${PUBLIC_ASSETS}/manifest.json" ]; then
   fail "Assets not staged. Run: node scripts/stage-assets-to-public.js"
 fi
 
-MANIFEST_PATH="${PUBLIC_ASSETS}/manifest.json"
-MANIFEST_SCHEMA=$(node -p "require('${MANIFEST_PATH}').schema")
+MANIFEST_SCHEMA=$(node -p "require('${PUBLIC_ASSETS}/manifest.json').schema")
 if [ "${MANIFEST_SCHEMA}" != "UPRE_BROWSER_MANIFEST_V1" ]; then
   fail "Invalid manifest schema: ${MANIFEST_SCHEMA}"
 fi
 
-# Check required asset files
 for asset in main.wasm r0_final.zkey r0_vk.json; do
   if [ ! -f "${PUBLIC_ASSETS}/${asset}" ]; then
     fail "Missing asset: ${asset}"
@@ -76,8 +58,23 @@ for asset in main.wasm r0_final.zkey r0_vk.json; do
 done
 ok "Assets staged and manifest valid"
 
-# ── Check for browser automation ──
+# ── 2. Verify dist build has no .ts worker files ──
+if [ -d "${WEB_DIR}/dist" ]; then
+  TS_WORKERS=$(find "${WEB_DIR}/dist" -name "proverWorker*.ts" 2>/dev/null || true)
+  if [ -n "${TS_WORKERS}" ]; then
+    fail "Build contains uncompiled .ts worker files: ${TS_WORKERS}"
+  fi
+fi
+ok "Build verified (no uncompiled .ts workers)"
 
+# ── 3. Prepare-only mode ──
+if [ "${PREPARE_ONLY}" = "true" ]; then
+  echo ""
+  ok "Prepare-only mode: stage + build verified. Skipping browser execution."
+  exit 0
+fi
+
+# ── 4. Check for browser automation ──
 HAS_PUPPETEER=false
 if node -e "require('puppeteer')" 2>/dev/null; then
   HAS_PUPPETEER=true
@@ -91,47 +88,46 @@ fi
 if [ "${HAS_PUPPETEER}" = "false" ] && [ "${HAS_PLAYWRIGHT}" = "false" ]; then
   echo ""
   echo "============================================"
-  echo "  PENDIENTE: Browser automation not found"
+  echo "  FAILED: Browser automation not found"
   echo "============================================"
   echo ""
-  echo "  This runner requires puppeteer or playwright to collect browser evidence."
-  echo "  Install with: npm install puppeteer"
+  echo "  This runner requires puppeteer or playwright."
+  echo "  Install: npm install puppeteer"
   echo ""
-  echo "  Manual verification steps:"
-  echo "  1. cd apps/web && npx vite preview --port 8788"
-  echo "  2. Open http://localhost:8788/harness.html in Chromium"
-  echo "  3. Click 'Run valid R0' → verify proof generated"
-  echo "  4. Click 'Run invalid witness' → verify error sanitized"
-  echo "  5. Click 'Cancel' during a run → verify bounded cancel"
-  echo "  6. Check DevTools Network tab: only GET requests"
-  echo "  7. Check DevTools Console: no secret values"
-  echo "  8. Copy result from window.__ZKQ_HARNESS_RESULT__"
+  echo "  Or use --prepare-only to skip browser execution."
+  echo "  cd apps/web && npx vite preview --port 8788"
+  echo "  Then open http://localhost:8788/harness.html in Chromium."
   echo ""
-  echo "  Build + typecheck: PASS"
-  echo "  Unit tests: PASS"
-  echo "  Staging: PASS"
-  echo "  Browser evidence: PENDIENTE (requires Chromium)"
-  echo ""
-  exit 0
+  echo "  Manual verification checklist:"
+  echo "    1. Load harness → buttons enabled"
+  echo "    2. Click 'Run valid R0' → proof PASS"
+  echo "    3. Signals match fixture (check __ZKQ_HARNESS_RESULT__)"
+  echo "    4. Proof/public hashes non-null, byte lengths 384/196"
+  echo "    5. Click 'Run invalid witness' → sanitized error"
+  echo "    6. Cancel with recovery"
+  echo "    7. No POST/PUT/PATCH/DELETE requests"
+  echo "    8. Only GET to localhost:8788"
+  echo "    9. No secrets in URL/DOM/console/storage"
+  echo "   10. Register user agent, duration, memory"
+  exit 1
 fi
 
-# ── Run browser evidence collection (PENDIENTE: implement when puppeteer available) ──
+info "Browser automation detected. Collecting evidence..."
 
-info "Browser automation detected. Running harness..."
-
-# TODO: Implement browser automation when puppeteer/playwright is installed.
+# ── 5. Collect browser evidence ──
+# PENDIENTE: Implement puppeteer/playwright automation when available.
 # The harness page at /harness.html exposes window.__ZKQ_HARNESS_RESULT__
-# which contains all test results. The collector should:
-# 1. Start vite preview
+# with all test results. The collector should:
+# 1. Start vite preview on port 8788
 # 2. Launch Chromium
-# 3. Navigate to harness
+# 3. Navigate to http://localhost:8788/harness.html
 # 4. Click buttons to run tests
 # 5. Capture console, network, and result
-# 6. Validate 10 checks
-# 7. Save evidence
+# 6. Validate 10 checks from brief §5
+# 7. Save evidence to tmp/u-pre/
 
-echo "PENDIENTE: Browser automation implementation needed."
-echo "The harness page is ready at /harness.html."
+echo "PENDIENTE: Browser automation implementation needed for full gate."
 echo "Run manually: cd apps/web && npx vite preview --port 8788"
+echo "Then open http://localhost:8788/harness.html in Chromium."
 
-exit 0
+exit 1

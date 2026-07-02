@@ -6,19 +6,21 @@
  * SHA-256 over those bytes. Secrets (inputs) and raw witness NEVER leave
  * this module.
  *
- * The adapter must be constructed with asset URLs and the verification key.
- * Before proving, it validates asset hashes against the served manifest.
+ * Manifest is MANDATORY — the worker must verify all three assets
+ * (wasm, zkey, vk) match the manifest's SHA-256 and size before
+ * calling fullProve. There is no mock fallback in this adapter.
  */
 import type { ProofEnvelope, Sha256Hex } from "@zk-quorum/protocol";
 import type { ProvingRequest, ProvingResponse, ProvingProgress } from "./provingAdapter.js";
 import { encodeProof, encodePublicSignals, type ProofJson, type PublicJson } from "./sorobanEncoding.js";
+import { isCanonicalDecimalFr } from "./sorobanEncoding.js";
 
 // ── Manifest types ──
 
 export interface AssetManifest {
   readonly schema: "UPRE_BROWSER_MANIFEST_V1";
-  readonly gate: string;
-  readonly circuit: string;
+  readonly gate: "U-PRE-BROWSER-R0";
+  readonly circuit: "PublicVoteR0";
   readonly rung: 0;
   readonly proof_system: "Groth16";
   readonly curve: "bls12-381";
@@ -29,6 +31,32 @@ export interface AssetManifest {
     readonly sha256: string;
     readonly size: number;
   }>;
+}
+
+const REQUIRED_ASSET_KINDS: ReadonlySet<string> = new Set(["wasm", "zkey", "vk"]);
+
+// ── Strict request validation ──
+
+const VALID_REQUEST_KEYS = new Set(["kind", "electionId", "publicSchemaId", "publicSignals", "inputs"]);
+
+function validateRequest(req: ProvingRequest): void {
+  // Exact key set
+  const keys = Object.keys(req as Record<string, unknown>);
+  for (const k of keys) {
+    if (!VALID_REQUEST_KEYS.has(k)) {
+      throw new Error(`invalid request: unknown key "${k}"`);
+    }
+  }
+  if (req.kind !== "prove-r0") throw new Error("invalid request: kind must be prove-r0");
+  if (req.publicSchemaId !== "PUBLIC_SCHEMA_V1_R0") throw new Error("invalid request: publicSchemaId must be PUBLIC_SCHEMA_V1_R0");
+  if (typeof req.electionId !== "string" || !req.electionId.startsWith("0x")) throw new Error("invalid request: electionId must be 0x-prefixed hex");
+  if (!Array.isArray(req.publicSignals) || req.publicSignals.length !== 6) throw new Error("invalid request: publicSignals must have exactly 6 elements");
+  for (let i = 0; i < req.publicSignals.length; i++) {
+    if (!isCanonicalDecimalFr(req.publicSignals[i])) {
+      throw new Error(`invalid request: publicSignals[${i}] is not canonical decimal Fr`);
+    }
+  }
+  if (typeof req.inputs !== "object" || req.inputs === null) throw new Error("invalid request: inputs must be a non-null object");
 }
 
 // ── Error allowlist — never include secrets, inputs, witness, or raw stack ──
@@ -45,11 +73,9 @@ const SANITIZED_PREFIXES: ReadonlyArray<string> = [
 function sanitizeError(e: unknown): string {
   if (e instanceof DOMException && e.name === "AbortError") return "cancelled";
   const msg = e instanceof Error ? e.message : String(e ?? "unknown");
-  // If the message already starts with a known safe prefix, return as-is
   for (const prefix of SANITIZED_PREFIXES) {
     if (msg.startsWith(prefix)) return msg;
   }
-  // Otherwise, return a generic message
   return "prover error: internal";
 }
 
@@ -60,13 +86,15 @@ export class RealR0ProvingAdapter {
   private wasmUrl: string;
   private zkeyUrl: string;
   private vkJson: object;
-  private manifest: AssetManifest | null;
+  private manifest: AssetManifest;
 
-  constructor(wasmUrl: string, zkeyUrl: string, vkJson: object, manifest: AssetManifest | null = null) {
+  constructor(wasmUrl: string, zkeyUrl: string, vkJson: object, manifest: AssetManifest) {
     this.wasmUrl = wasmUrl;
     this.zkeyUrl = zkeyUrl;
     this.vkJson = vkJson;
     this.manifest = manifest;
+    // Validate manifest structure immediately
+    this.validateManifest(manifest);
   }
 
   public cancel(): void {
@@ -83,19 +111,13 @@ export class RealR0ProvingAdapter {
   }
 
   private async _prove(req: ProvingRequest, onProgress: (p: ProvingProgress) => void): Promise<ProvingResponse> {
-    // Validate request
-    if (req.kind !== "prove-r0") {
-      throw new Error("invalid request: only prove-r0 supported");
-    }
-    if (req.publicSchemaId !== "PUBLIC_SCHEMA_V1_R0") {
-      throw new Error("invalid request: unsupported schema");
-    }
+    // Strict request validation
+    validateRequest(req);
+
     if (this.cancelled) throw new Error("cancelled");
 
-    // Validate manifest if present
-    if (this.manifest) {
-      this.validateManifest(this.manifest);
-    }
+    // Verify manifest structure (validated in constructor too, double-check)
+    this.validateManifest(this.manifest);
 
     // Dynamically import snarkjs (only works in worker context)
     const snarkjs = await import("snarkjs");
@@ -103,12 +125,16 @@ export class RealR0ProvingAdapter {
 
     if (this.cancelled) throw new Error("cancelled");
 
-    onProgress({ stage: "witness", fraction: 0.1 });
+    onProgress({ stage: "witness", fraction: 0.05 });
 
-    // Verify zkey hash against manifest before proving
-    if (this.manifest) {
-      await this.verifyAssetHash(this.zkeyUrl, "zkey", this.manifest);
-    }
+    // Verify ALL THREE assets (wasm, zkey, vk) hash+size against manifest
+    await this.verifyAssetHash(this.wasmUrl, "wasm", this.manifest);
+    await this.verifyAssetHash(this.zkeyUrl, "zkey", this.manifest);
+    await this.verifyAssetHash(this.vkJson as unknown as string, "vk", this.manifest, true);
+
+    if (this.cancelled) throw new Error("cancelled");
+
+    onProgress({ stage: "witness", fraction: 0.1 });
 
     // Run fullProve
     const result = await groth16.fullProve(
@@ -135,12 +161,10 @@ export class RealR0ProvingAdapter {
       throw new Error("verify error: snarkjs verification failed");
     }
 
-    // If the request includes expected public signals, compare indices 1-5
-    // (skip index 0 = nullifierHash, which is output-only and cannot be
-    // precomputed by the caller). The comparison is strict string equality
-    // of canonical decimal Fr values.
-    if (req.publicSignals.length === publicSignals.length) {
-      for (let i = 1; i < publicSignals.length; i++) {
+    // Compare ALL 6 public signals (including nullifierHash at index 0)
+    // against the request's expected signals.
+    if (req.publicSignals.length === 6) {
+      for (let i = 0; i < 6; i++) {
         if (String(publicSignals[i]) !== String(req.publicSignals[i])) {
           throw new Error(`prover error: public signal mismatch at index ${i} — expected ${req.publicSignals[i]}, got ${publicSignals[i]}`);
         }
@@ -181,38 +205,42 @@ export class RealR0ProvingAdapter {
   }
 
   private validateManifest(m: AssetManifest): void {
-    if (m.schema !== "UPRE_BROWSER_MANIFEST_V1") {
-      throw new Error(`manifest error: unknown schema ${m.schema}`);
-    }
-    if (m.gate !== "U-PRE-BROWSER-R0") {
-      throw new Error(`manifest error: unknown gate ${m.gate}`);
-    }
-    if (m.circuit !== "PublicVoteR0") {
-      throw new Error(`manifest error: unknown circuit ${m.circuit}`);
-    }
-    if (m.curve !== "bls12-381") {
-      throw new Error(`manifest error: unknown curve ${m.curve}`);
-    }
-    if (m.proof_system !== "Groth16") {
-      throw new Error(`manifest error: unknown proof system ${m.proof_system}`);
-    }
-    if (m.rung !== 0) {
-      throw new Error(`manifest error: rung must be 0`);
-    }
-    if (!Array.isArray(m.assets) || m.assets.length === 0) {
-      throw new Error("manifest error: missing assets");
+    if (m.schema !== "UPRE_BROWSER_MANIFEST_V1") throw new Error(`manifest error: unknown schema ${m.schema}`);
+    if (m.gate !== "U-PRE-BROWSER-R0") throw new Error(`manifest error: unknown gate ${m.gate}`);
+    if (m.circuit !== "PublicVoteR0") throw new Error(`manifest error: unknown circuit ${m.circuit}`);
+    if (m.curve !== "bls12-381") throw new Error(`manifest error: unknown curve ${m.curve}`);
+    if (m.proof_system !== "Groth16") throw new Error(`manifest error: unknown proof system ${m.proof_system}`);
+    if (m.rung !== 0) throw new Error(`manifest error: rung must be 0`);
+    if (!Array.isArray(m.assets) || m.assets.length < 3) throw new Error("manifest error: must have at least 3 assets (wasm, zkey, vk)");
+    // All three required kinds must be present
+    const kinds = new Set(m.assets.map((a) => a.kind));
+    for (const k of REQUIRED_ASSET_KINDS) {
+      if (!kinds.has(k)) throw new Error(`manifest error: missing required asset kind: ${k}`);
     }
   }
 
-  private async verifyAssetHash(url: string, kind: string, manifest: AssetManifest): Promise<void> {
+  private async verifyAssetHash(url: string, kind: string, manifest: AssetManifest, isJson: boolean = false): Promise<void> {
     const asset = manifest.assets.find((a) => a.kind === kind);
-    if (!asset) {
-      throw new Error(`manifest error: no ${kind} asset in manifest`);
+    if (!asset) throw new Error(`manifest error: no ${kind} asset in manifest`);
+
+    if (isJson) {
+      // For VK, we compare against the JSON we already have.
+      // Compute SHA-256 of the canonical JSON.
+      const vkJson = this.vkJson;
+      const jsonBytes = new TextEncoder().encode(JSON.stringify(vkJson));
+      const hashBytes = await crypto.subtle.digest("SHA-256", jsonBytes.buffer as ArrayBuffer);
+      const actualHash = bytesToHexLower(new Uint8Array(hashBytes));
+      if (actualHash !== asset.sha256) {
+        throw new Error(`manifest error: ${kind} SHA-256 mismatch — expected ${asset.sha256}, got ${actualHash}`);
+      }
+      if (jsonBytes.length !== asset.size) {
+        throw new Error(`manifest error: ${kind} size mismatch — expected ${asset.size}, got ${jsonBytes.length}`);
+      }
+      return;
     }
+
     const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`manifest error: cannot fetch ${kind} asset`);
-    }
+    if (!response.ok) throw new Error(`manifest error: cannot fetch ${kind} asset (HTTP ${response.status})`);
     const data = await response.arrayBuffer();
     const hashBytes = await crypto.subtle.digest("SHA-256", data);
     const actualHash = bytesToHexLower(new Uint8Array(hashBytes));

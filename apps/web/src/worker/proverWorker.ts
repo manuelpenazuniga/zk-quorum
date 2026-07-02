@@ -1,79 +1,58 @@
 /**
- * Worker entry point — Vite bundles this as a separate chunk.
+ * Worker entry point for RealR0ProvingAdapter with snarkjs 0.7.6.
  *
- * The worker supports two modes:
- *   1. Real mode (default): uses RealR0ProvingAdapter with snarkjs 0.7.6.
- *      Loads assets from /upre-assets/ via fetch.
- *   2. Mock mode (fallback): uses MockProvingAdapter for development
- *      without proving assets. Activated when REAL_PROVER=0 env/signal.
+ * This worker has NO mock fallback. Manifest is mandatory — the worker
+ * fails-closed if the manifest cannot be loaded or validated.
  *
  * Protocol:
  *   Main → Worker: { type: "job", jobId: number, payload: ProvingRequest }
  *   Worker → Main: { type: "progress", jobId, payload: ProvingProgress }
  *   Worker → Main: { type: "result", jobId, payload: ProvingResponse }
  */
-import { MockProvingAdapter, type ProvingRequest, type ProvingResponse, type ProvingProgress } from "../adapters/provingAdapter.js";
+import { type ProvingRequest, type ProvingResponse, type ProvingProgress } from "../adapters/provingAdapter.js";
 import { RealR0ProvingAdapter, type AssetManifest } from "../adapters/realProvingAdapter.js";
 
 // ── Config ──
 
-interface WorkerConfig {
-  /** If true, attempt to use the real prover with snarkjs */
-  real: boolean;
-  /** Base path for U-Pre asset directory (served by Vite) */
-  assetsBase: string;
-}
+const ASSETS_BASE = "/upre-assets";
 
-let adapter: RealR0ProvingAdapter | MockProvingAdapter;
+let adapter: RealR0ProvingAdapter | null = null;
 let adapterReady = false;
 let adapterError: string | null = null;
 
-// ── Initialization ──
+// ── Initialization (mandatory) ──
 
-async function initRealAdapter(config: WorkerConfig): Promise<void> {
-  const manifestUrl = `${config.assetsBase}/manifest.json`;
-  const wasmUrl = `${config.assetsBase}/main.wasm`;
-  const zkeyUrl = `${config.assetsBase}/r0_final.zkey`;
-  const vkUrl = `${config.assetsBase}/r0_vk.json`;
+async function initAdapter(): Promise<void> {
+  const manifestUrl = `${ASSETS_BASE}/manifest.json`;
+  const wasmUrl = `${ASSETS_BASE}/main.wasm`;
+  const zkeyUrl = `${ASSETS_BASE}/r0_final.zkey`;
+  const vkUrl = `${ASSETS_BASE}/r0_vk.json`;
 
-  let manifest: AssetManifest | null = null;
-  try {
-    const resp = await fetch(manifestUrl);
-    if (resp.ok) {
-      manifest = await resp.json() as AssetManifest;
-    }
-  } catch {
-    // Manifest optional for development without assets
+  // Manifest is mandatory
+  const manifestResp = await fetch(manifestUrl);
+  if (!manifestResp.ok) {
+    throw new Error(`manifest error: cannot fetch manifest (HTTP ${manifestResp.status})`);
   }
+  const manifest = await manifestResp.json() as AssetManifest;
 
+  // VK is mandatory
   const vkResp = await fetch(vkUrl);
-  if (!vkResp.ok) throw new Error(`manifest error: cannot fetch VK (${vkResp.status})`);
+  if (!vkResp.ok) {
+    throw new Error(`manifest error: cannot fetch VK (HTTP ${vkResp.status})`);
+  }
   const vkJson = await vkResp.json();
 
   adapter = new RealR0ProvingAdapter(wasmUrl, zkeyUrl, vkJson, manifest);
   adapterReady = true;
 }
 
-function initMockAdapter(): void {
-  adapter = new MockProvingAdapter();
-  adapterReady = true;
-}
-
-// Read config from worker startup data or defaults
-const DEFAULT_CONFIG: WorkerConfig = {
-  real: true,
-  assetsBase: "/upre-assets",
-};
-
-// Immediately initialize
+// Immediately initialize — fail-closed on error
 (async () => {
   try {
-    await initRealAdapter(DEFAULT_CONFIG);
-    // No console.log in worker — keep output clean
+    await initAdapter();
   } catch (e: unknown) {
     adapterError = e instanceof Error ? e.message : String(e);
-    // Fall back to mock so the worker doesn't crash silently
-    initMockAdapter();
+    // Worker stays in error state; no mock fallback
   }
 })();
 
@@ -83,9 +62,8 @@ self.addEventListener("message", async (ev: MessageEvent<{ readonly type: string
   const msg = ev.data;
   if (!msg || typeof msg.type !== "string") return;
 
-  // Handle cancel: the boundary terminates the worker, so this is a best-effort
-  // signal. Since the adapter only checks `cancelled` between async steps,
-  // and fullProve blocks the event loop, termination is the real mechanism.
+  // Cancel: boundary terminates the worker for real cancellation.
+  // This signal is best-effort for in-flight async steps.
   if (msg.type === "cancel") {
     if (adapter && typeof adapter.cancel === "function") {
       adapter.cancel();
@@ -103,16 +81,16 @@ self.addEventListener("message", async (ev: MessageEvent<{ readonly type: string
     self.postMessage({ type: "progress", jobId, payload: p });
   };
 
-  // Wait for adapter to be ready
+  // Wait for adapter to be ready (or fail)
   while (!adapterReady && adapterError === null) {
     await new Promise((r) => setTimeout(r, 10));
   }
 
-  if (adapterError !== null) {
+  if (adapterError !== null || adapter === null) {
     self.postMessage({
       type: "result",
       jobId,
-      payload: { ok: false, reason: `prover error: init failed — ${adapterError}` } satisfies ProvingResponse,
+      payload: { ok: false, reason: `prover error: init failed — ${adapterError ?? "adapter not available"}` } satisfies ProvingResponse,
     });
     return;
   }
@@ -121,11 +99,14 @@ self.addEventListener("message", async (ev: MessageEvent<{ readonly type: string
     const result: ProvingResponse = await adapter.prove(req, onProgress);
     self.postMessage({ type: "result", jobId, payload: result });
   } catch (e: unknown) {
-    // Sanitize: never leak raw error content
     const reason = e instanceof Error ? e.message : String(e ?? "unknown");
-    // Only allow known safe patterns
     const safeReasons = new Set(["cancelled"]);
-    const safeReason = safeReasons.has(reason) || reason.startsWith("prover error: ") || reason.startsWith("manifest error: ") || reason.startsWith("encoding error: ") || reason.startsWith("verify error: ") || reason.startsWith("invalid request: ")
+    const safeReason = safeReasons.has(reason)
+      || reason.startsWith("prover error: ")
+      || reason.startsWith("manifest error: ")
+      || reason.startsWith("encoding error: ")
+      || reason.startsWith("verify error: ")
+      || reason.startsWith("invalid request: ")
       ? reason
       : "prover error: internal";
     self.postMessage({

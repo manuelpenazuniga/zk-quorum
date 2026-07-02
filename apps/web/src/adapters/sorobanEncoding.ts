@@ -2,17 +2,21 @@
  * Soroban canonical binary encoding — exactly matches circom2soroban Rust tool
  * and the contract's VK/Proof/PublicSignals from_bytes.
  *
- * Byte formats (matching tools/circom2soroban/src/lib.rs and crates/zk):
+ * Byte formats (matching tools/circom2soroban/src/lib.rs via arkworks):
  *   Proof: A G1(96) | B G2(192) | C G1(96)         = 384 bytes
  *   Public: len u32 BE | Fr[i] 32-byte BE           =   4 + 6*32 = 196 bytes
  *
- * G1 uncompressed: x(48 BE bytes) | y(48 BE bytes)  =  96 bytes
- * G2 uncompressed: x.c0(48) | x.c1(48) | y.c0(48) | y.c1(48) = 192 bytes
+ * G1 uncompressed (arkworks): x(48 BE) | y(48 BE) = 96 bytes
+ * G2 uncompressed (arkworks): x.c1(48) | x.c0(48) | y.c1(48) | y.c0(48) = 192 bytes
+ *
+ * IMPORTANT: arkworks G2Affine::serialize_uncompressed writes Fq2 as c1||c0
+ * (coefficient order). snarkjs pi_b is [[x_c1, x_c0], [y_c1, y_c0], ["1","0"]],
+ * so the on-wire order is pi_b[0][1]||pi_b[0][0]||pi_b[1][1]||pi_b[1][0].
+ * This was cross-verified against `xxd` of circom2soroban proof.bin output.
  *
  * Each coordinate is a BLS12-381 Fq element (< Fq modulus), serialized
  * as 48-byte big-endian. Each public signal is an Fr element (< Fr modulus),
- * serialized as 32-byte big-endian. Zero is allowed for coordinates;
- * the snarkjs prover guarantees valid points on the curve.
+ * serialized as 32-byte big-endian.
  */
 
 // BLS12-381 base field (Fq) modulus — 381 bits = 48 bytes
@@ -70,7 +74,7 @@ function parseFq(s: string): bigint {
 
 // ── Fr parsing (validates < Fr modulus) ──
 
-function parseFr(s: string): bigint {
+export function parseFr(s: string): bigint {
   const val = parseDecimalStrict(s);
   if (val >= FR_MODULUS) throw new Error(`Fr value >= modulus: ${s}`);
   return val;
@@ -81,7 +85,12 @@ function parseFr(s: string): bigint {
 /** Three Fq decimal strings: [x, y, flag] where flag === "1" for affine G1 point */
 export type G1Json = [string, string, string];
 
-/** G2 point: [[x.c0, x.c1], [y.c0, y.c1], [flag.c0, flag.c1]] where flag === ["1", "0"] */
+/**
+ * G2 point from snarkjs:
+ *   [[x.c1, x.c0], [y.c1, y.c0], [flag.c0, flag.c1]]
+ * where flag === ["1", "0"] for affine.
+ * Note: snarkjs indexes c1 first, c0 second, matching arkworks Fq2 convention.
+ */
 export type G2Json = [[string, string], [string, string], [string, string]];
 
 export interface ProofJson {
@@ -107,30 +116,38 @@ function serializeG1Uncompressed(g1: G1Json, label: string): Uint8Array {
   return out;
 }
 
-// ── G2 serialization (uncompressed: x.c0(48) | x.c1(48) | y.c0(48) | y.c1(48)) ──
-
+/**
+ * G2 uncompressed serialization matching arkworks' G2Affine::serialize_uncompressed.
+ *
+ * arkworks Fq2::serialize_uncompressed writes c1 first, then c0.
+ * snarkjs pi_b = [[x_c1, x_c0], [y_c1, y_c0], ["1","0"]].
+ * On-wire: x_c1(48) | x_c0(48) | y_c1(48) | y_c0(48) = 192 bytes
+ */
 function serializeG2Uncompressed(g2: G2Json, label: string): Uint8Array {
   const flag = g2[2];
   if (flag[0] !== "1" || flag[1] !== "0") {
     throw new Error(`${label}: flag must be ["1","0"] (affine), got ["${flag[0]}","${flag[1]}"]`);
   }
-  const x0 = parseFq(g2[0][0]);
-  const x1 = parseFq(g2[0][1]);
-  const y0 = parseFq(g2[1][0]);
-  const y1 = parseFq(g2[1][1]);
+  // snarkjs: pi_b[0][0] = x_c1, pi_b[0][1] = x_c0
+  //          pi_b[1][0] = y_c1, pi_b[1][1] = y_c0
+  const xc1 = parseFq(g2[0][0]); // pi_b[0][0] = x.c1
+  const xc0 = parseFq(g2[0][1]); // pi_b[0][1] = x.c0
+  const yc1 = parseFq(g2[1][0]); // pi_b[1][0] = y.c1
+  const yc0 = parseFq(g2[1][1]); // pi_b[1][1] = y.c0
   const out = new Uint8Array(G2_UNCOMPRESSED);
+  // On-wire: x_c1 | x_c0 | y_c1 | y_c0
   let off = 0;
-  out.set(bigintToBytesBE(x0, FQ_BYTE_LEN), off); off += FQ_BYTE_LEN;
-  out.set(bigintToBytesBE(x1, FQ_BYTE_LEN), off); off += FQ_BYTE_LEN;
-  out.set(bigintToBytesBE(y0, FQ_BYTE_LEN), off); off += FQ_BYTE_LEN;
-  out.set(bigintToBytesBE(y1, FQ_BYTE_LEN), off);
+  out.set(bigintToBytesBE(xc1, FQ_BYTE_LEN), off); off += FQ_BYTE_LEN;
+  out.set(bigintToBytesBE(xc0, FQ_BYTE_LEN), off); off += FQ_BYTE_LEN;
+  out.set(bigintToBytesBE(yc1, FQ_BYTE_LEN), off); off += FQ_BYTE_LEN;
+  out.set(bigintToBytesBE(yc0, FQ_BYTE_LEN), off);
   return out;
 }
 
 // ── Public API ──
 
 /**
- * Convert a snarkjs proof JSON object to Soroban canonical proof bytes (384 bytes).
+ * Convert a snarkjs proof JSON to Soroban canonical proof bytes (384 bytes).
  * Format: A G1(96) | B G2(192) | C G1(96)
  */
 export function encodeProof(proof: ProofJson): Uint8Array {

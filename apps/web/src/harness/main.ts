@@ -54,12 +54,13 @@ const FIXTURE_INPUTS = {
   ],
 };
 
-// Public signals are ordered as circuit output:
-// [0] nullifierHash (output, unknown), [1] vote, [2] optionCount,
+// nullifierHash = Poseidon255(nullifierSecret="222", electionScope=...) precomputed from E0
+const FIXTURE_NULLIFIER_HASH = "15309246400844181668452549791295656752795519099905502581510248520065524481077";
+
+// Public signals: [0] nullifierHash, [1] vote, [2] optionCount,
 // [3] stateRoot, [4] associationRoot, [5] electionScope
-// Index 0 is empty string — the adapter skips index 0 in comparison.
 const FIXTURE_PUBLIC_SIGNALS = [
-  "",  // nullifierHash — output only, cannot precompute
+  FIXTURE_NULLIFIER_HASH,
   FIXTURE_INPUTS.vote,
   FIXTURE_INPUTS.optionCount,
   FIXTURE_INPUTS.stateRoot,
@@ -71,7 +72,7 @@ const FIXTURE_ELECTION_ID = ("0x" + "ab".repeat(32)) as `0x${string}`;
 
 // ── Invalid witness fixture (wrong root) ──
 
-const INVALID_INPUTS = {
+const INVALID_INPUTS: Record<string, unknown> = {
   ...FIXTURE_INPUTS,
   stateRoot: "9999999999999999999999999999999999999999999999999999999999999999",
 };
@@ -136,7 +137,6 @@ function appendSummary() {
   summaryEl.innerHTML = `<p><strong>Summary:</strong> ${passCount} pass, ${failCount} fail, ${testResults.length} total</p>`;
 }
 
-// Expose for automation
 function exposeResult() {
   (window as unknown as Record<string, unknown>).__ZKQ_HARNESS_RESULT__ = {
     gate: "U-PRE-BROWSER-R0",
@@ -163,21 +163,20 @@ function runTest(name: string, inputs: Record<string, unknown>, expectedOk: bool
     kind: "prove-r0",
     electionId: FIXTURE_ELECTION_ID,
     publicSchemaId: "PUBLIC_SCHEMA_V1_R0",
-    publicSignals: FIXTURE_PUBLIC_SIGNALS.filter((s) => s !== ""),
+    publicSignals: [...FIXTURE_PUBLIC_SIGNALS],
     inputs,
   };
 
   prover.prove(req, (_p) => {
-    // progress callback — tracking not displayed in harness UI
+    // progress callback — not displayed in harness UI
   }).then((resp: ProvingResponse) => {
     const elapsed = Math.round(performance.now() - start);
     if (currentTest !== name) return; // stale
 
     if (resp.ok && expectedOk) {
-      // Success path: valid proof
       const signals = resp.envelope.publicSignals;
       const proofHex = resp.envelope.proofBytes;
-      const proofByteLen = (proofHex.length - 2) / 2; // hex → bytes
+      const proofByteLen = (proofHex.length - 2) / 2;
       testResults.push({
         test: name,
         stage: "pass",
@@ -191,7 +190,6 @@ function runTest(name: string, inputs: Record<string, unknown>, expectedOk: bool
         memoryAvailable: memStart,
       });
     } else if (!resp.ok && !expectedOk) {
-      // Expected failure
       testResults.push({
         test: name,
         stage: "pass",
@@ -225,8 +223,8 @@ function runTest(name: string, inputs: Record<string, unknown>, expectedOk: bool
     const elapsed = Math.round(performance.now() - start);
     if (currentTest !== name) return;
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg === "cancelled" && expectedOk === false) {
-      // Cancel is expected for some tests
+    // Only cancelled is an expected non-ok outcome
+    if (msg === "cancelled") {
       testResults.push({
         test: name,
         stage: "pass",
@@ -279,10 +277,9 @@ btnInvalid.addEventListener("click", () => {
 
 btnCancel.addEventListener("click", () => {
   if (prover !== null && currentTest !== null) {
+    // Don't reset currentTest — the resolver/catch handler manages state
+    // and checks currentTest for staleness
     prover.cancel();
-    // The cancel resolves the pending promise, so the test's handler manages state
-    currentTest = null;
-    setButtons(true);
   }
 });
 

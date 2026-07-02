@@ -1,4 +1,6 @@
 import type { ProvingRequest, ProvingResponse, ProvingProgress } from "../adapters/provingAdapter.js";
+// Vite ?worker import — triggers worker bundling (snarkjs included)
+import ProverWorkerCtor from "./proverWorker?worker";
 
 export interface ProverClient {
   prove(req: ProvingRequest, onProgress: (p: ProvingProgress) => void): Promise<ProvingResponse>;
@@ -28,7 +30,7 @@ interface ResultMessage {
 
 type InboundMessage = ProgressMessage | ResultMessage;
 
-// ── Allowlisted error codes (no secrets, no stack traces, no raw witness) ──
+// ── Allowlisted error codes (no secrets, no stack traces) ──
 
 const ALLOWLISTED_ERROR_CODES = new Set([
   "cancelled",
@@ -38,7 +40,12 @@ const ALLOWLISTED_ERROR_CODES = new Set([
 ]);
 
 function isAllowlistedError(msg: string): boolean {
-  return ALLOWLISTED_ERROR_CODES.has(msg) || msg.startsWith("prover error: ") || msg.startsWith("manifest error: ") || msg.startsWith("encoding error: ") || msg.startsWith("verify error: ") || msg.startsWith("invalid request: ");
+  return ALLOWLISTED_ERROR_CODES.has(msg)
+    || msg.startsWith("prover error: ")
+    || msg.startsWith("manifest error: ")
+    || msg.startsWith("encoding error: ")
+    || msg.startsWith("verify error: ")
+    || msg.startsWith("invalid request: ");
 }
 
 function sanitizeBoundaryError(e: unknown): string {
@@ -48,9 +55,16 @@ function sanitizeBoundaryError(e: unknown): string {
   return "prover error: internal";
 }
 
+// ── Default worker factory (uses Vite ?worker bundled import) ──
+
+function defaultWorkerFactory(): Worker {
+  return new ProverWorkerCtor();
+}
+
 // ── Factory ──
 
-export function createWorkerProverClient(workerUrl?: string): ProverClient {
+export function createWorkerProverClient(workerFactory?: () => Worker): ProverClient {
+  const makeWorker = workerFactory ?? defaultWorkerFactory;
   let worker: Worker | null = null;
   let jobIdCounter = 0;
   let currentJobId: number | null = null;
@@ -64,11 +78,9 @@ export function createWorkerProverClient(workerUrl?: string): ProverClient {
   const ensureWorker = (): Worker => {
     if (terminated) throw new Error("terminated");
     if (worker !== null) return worker;
-    const url = workerUrl ?? new URL("../worker/proverWorker.ts", import.meta.url);
-    worker = new Worker(url, { type: "module" });
+    worker = makeWorker();
     worker.addEventListener("message", (ev: MessageEvent<InboundMessage>) => {
       const msg = ev.data;
-      // Reject stale messages (job IDs don't match)
       if (inflight === null) return;
       if (msg.jobId !== currentJobId) return;
 
@@ -77,7 +89,6 @@ export function createWorkerProverClient(workerUrl?: string): ProverClient {
         return;
       }
       if (msg.type === "result") {
-        // Sanitize error reasons in response
         const rawPayload = msg.payload as ProvingResponse;
         let safePayload = rawPayload;
         if (!rawPayload.ok && typeof rawPayload.reason === "string") {
@@ -114,9 +125,7 @@ export function createWorkerProverClient(workerUrl?: string): ProverClient {
       return new Promise<ProvingResponse>((resolve, reject) => {
         inflight = {
           resolve: (r: ProvingResponse) => {
-            // Additional sanitization on success path
-            if (r.ok && r.envelope && r.envelope.publicSignals) {
-              // Ensure public signals are never mutated after return
+            if (r.ok && r.envelope) {
               r = {
                 ok: true,
                 envelope: {
@@ -146,7 +155,6 @@ export function createWorkerProverClient(workerUrl?: string): ProverClient {
       // Terminate worker to stop any in-flight fullProve (WASM blocks event loop)
       worker.terminate();
       worker = null;
-      // Resolve the pending job as cancelled
       if (inflight !== null) {
         const r: ProvingResponse = { ok: false, reason: "cancelled" };
         inflight.resolve(r);
