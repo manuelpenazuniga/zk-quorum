@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ZK-Quorum U-Pre — Browser evidence collector for Chromium.
+# ZK-Quorum U-Pre — Browser evidence gate for Chromium.
 #
 # --prepare-only: stage, build, and verify without browser execution.
 #   Exits 0 if all checks pass.
@@ -56,7 +56,7 @@ JS_WORKERS=$(find "${WEB_DIR}/dist" -name "proverWorker*.js" 2>/dev/null || true
 if [ -z "${JS_WORKERS}" ]; then
   fail "No compiled proverWorker JS bundle in dist/"
 fi
-ok "Build verified (compiled JS worker present, no .ts artifacts)"
+ok "Build verified (compiled JS worker, no .ts artifacts)"
 
 # ── 3. --prepare-only mode ──
 if [ "${PREPARE_ONLY}" = "true" ]; then
@@ -84,66 +84,124 @@ for f in "${REQUIRED_EVIDENCE_FILES[@]}"; do
 done
 ok "All required evidence files present"
 
-# Validate browser-result.json structure (strict schema)
+# ── Validate browser-result.json (strict schema) ──
 BR="${EVIDENCE_DIR}/browser-result.json"
-if ! node -e "
+node -e "
 const d = require('${BR}');
-const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
-assert(d.gate === 'U-PRE-BROWSER-R0', 'gate must be U-PRE-BROWSER-R0');
-assert(Array.isArray(d.tests), 'tests must be array');
-assert(d.tests.length >= 3, 'must have at least 3 test results');
-assert(typeof d.timestamp === 'string', 'timestamp must be string');
-assert(typeof d.userAgent === 'string', 'userAgent must be string');
-assert(typeof d.memoryAvailable === 'string', 'memoryAvailable must be string');
-for (const t of d.tests) {
-  assert(typeof t.test === 'string', 'test name must be string');
-  assert(['pass','fail','pending'].includes(t.stage), 'stage must be pass/fail/pending');
-  assert(typeof t.durationMs === 'number', 'durationMs must be number');
-  assert(typeof t.message === 'string', 'message must be string');
-}
-// Verify expected test names
-const names = d.tests.map(t => t.test);
-assert(names.includes('valid-r0'), 'must include valid-r0 test');
-assert(names.includes('invalid-witness'), 'must include invalid-witness test');
-const cancelTest = d.tests.find(t => t.test.startsWith('cancel'));
-assert(cancelTest, 'must include cancel test');
-assert(cancelTest.stage === 'pass', 'cancel test must pass');
-// Valid R0 must pass
-const validTest = d.tests.find(t => t.test === 'valid-r0');
-assert(validTest.stage === 'pass', 'valid-r0 must pass');
-assert(validTest.proofHash && validTest.proofHash.startsWith('0x'), 'valid-r0 must have proofHash');
-assert(validTest.publicSignalsHash && validTest.publicSignalsHash.startsWith('0x'), 'valid-r0 must have publicSignalsHash');
-assert(validTest.signalCount === 6, 'valid-r0 must have 6 signals');
-assert(validTest.proofByteLen === 384, 'valid-r0 proof must be 384 bytes');
-assert(validTest.publicByteLen === 196, 'valid-r0 public must be 196 bytes');
-console.log('PASS');
-" 2>&1; then
-  fail "browser-result.json validation failed"
-fi
-ok "browser-result.json schema and content valid"
 
-# Validate network.json (no POST/PUT/PATCH/DELETE, only GET to localhost)
+// Exact top-level keys
+const allowedKeys = new Set(['gate','tests','timestamp','userAgent','peakMemory','heapLimitMB']);
+const actualKeys = Object.keys(d);
+for (const k of actualKeys) {
+  if (!allowedKeys.has(k)) throw new Error('unknown top-level key: ' + k);
+}
+for (const k of allowedKeys) {
+  if (!(k in d)) throw new Error('missing top-level key: ' + k);
+}
+
+if (d.gate !== 'U-PRE-BROWSER-R0') throw new Error('gate must be U-PRE-BROWSER-R0');
+if (!Array.isArray(d.tests) || d.tests.length < 4) throw new Error('tests must be array with >=4 entries');
+if (typeof d.timestamp !== 'string') throw new Error('timestamp must be string');
+if (typeof d.userAgent !== 'string') throw new Error('userAgent must be string');
+if (d.peakMemory !== 'unsupported') throw new Error('peakMemory must be \"unsupported\"');
+if (d.heapLimitMB !== null && typeof d.heapLimitMB !== 'number') throw new Error('heapLimitMB must be number or null');
+
+// Exact test keys
+const testKeys = new Set(['test','stage','durationMs','message','proofHash','publicSignalsHash','signalCount','proofByteLen','publicByteLen','peakMemory','heapLimitMB']);
+const requiredTests = ['valid-r0','invalid-witness','cancel-r0','recovery-r0'];
+for (const t of d.tests) {
+  for (const k of Object.keys(t)) {
+    if (!testKeys.has(k)) throw new Error('unknown test key: ' + k);
+  }
+  if (t.stage !== 'pass' && t.stage !== 'fail') throw new Error('stage must be pass or fail');
+  if (typeof t.durationMs !== 'number') throw new Error('durationMs must be number');
+  if (typeof t.message !== 'string') throw new Error('message must be string');
+  if (t.peakMemory !== 'unsupported') throw new Error('test peakMemory must be \"unsupported\"');
+}
+
+// All 4 required tests must exist and pass
+for (const name of requiredTests) {
+  const found = d.tests.find(t => t.test === name);
+  if (!found) throw new Error('missing required test: ' + name);
+  if (found.stage !== 'pass') throw new Error(name + ' must pass, got ' + found.stage);
+  if (typeof found.durationMs !== 'number' || found.durationMs < 0) throw new Error(name + ' durationMs invalid');
+}
+
+// valid-r0 must have proof data
+const vr0 = d.tests.find(t => t.test === 'valid-r0');
+if (!vr0.proofHash || !vr0.proofHash.startsWith('0x')) throw new Error('valid-r0 must have proofHash');
+if (!vr0.publicSignalsHash || !vr0.publicSignalsHash.startsWith('0x')) throw new Error('valid-r0 must have publicSignalsHash');
+if (vr0.signalCount !== 6) throw new Error('valid-r0 must have 6 signals');
+if (vr0.proofByteLen !== 384) throw new Error('valid-r0 proof must be 384 bytes');
+if (vr0.publicByteLen !== 196) throw new Error('valid-r0 public must be 196 bytes');
+
+// recovery-r0 must have proof data
+const rr0 = d.tests.find(t => t.test === 'recovery-r0');
+if (!rr0.proofHash || !rr0.proofHash.startsWith('0x')) throw new Error('recovery-r0 must have proofHash');
+if (!rr0.publicSignalsHash || !rr0.publicSignalsHash.startsWith('0x')) throw new Error('recovery-r0 must have publicSignalsHash');
+if (rr0.signalCount !== 6) throw new Error('recovery-r0 must have 6 signals');
+if (rr0.proofByteLen !== 384) throw new Error('recovery-r0 proof must be 384 bytes');
+
+// cancel-r0 must have null proof data
+const cr0 = d.tests.find(t => t.test === 'cancel-r0');
+if (cr0.proofHash !== null) throw new Error('cancel-r0 proofHash must be null');
+if (cr0.signalCount !== null) throw new Error('cancel-r0 signalCount must be null');
+
+console.log('browser-result.json: PASS');
+" 2>&1 || fail "browser-result.json validation failed"
+
+# ── Validate network.json ──
 NET="${EVIDENCE_DIR}/network.json"
-if [ -f "${NET}" ]; then
-  if ! node -e "
+node -e "
 const d = require('${NET}');
-const forbidden = d.filter(r => r.method && ['POST','PUT','PATCH','DELETE'].includes(r.method.toUpperCase()));
-if (forbidden.length > 0) {
-  console.error('Forbidden requests:', JSON.stringify(forbidden.map(r => r.method + ' ' + r.url)));
-  process.exit(1);
+
+// Exact top-level keys
+const allowedKeys = new Set(['schema','entries']);
+const actualKeys = Object.keys(d);
+for (const k of actualKeys) {
+  if (!allowedKeys.has(k)) throw new Error('unknown network key: ' + k);
 }
-// All requests must be GET to localhost:8788
-const bad = d.filter(r => !r.url || (!r.url.includes('localhost:8788') && !r.url.startsWith('/')));
-if (bad.length > 0) {
-  console.error('Non-localhost requests:', JSON.stringify(bad.map(r => r.url)));
-  process.exit(1);
+for (const k of allowedKeys) {
+  if (!(k in d)) throw new Error('missing network key: ' + k);
 }
-console.log('PASS');
-" 2>&1; then
-    fail "network.json validation failed"
-  fi
-  ok "network.json: no forbidden methods, all localhost"
-fi
+
+if (d.schema !== 'upre-network-v1') throw new Error('network schema must be upre-network-v1');
+if (!Array.isArray(d.entries) || d.entries.length === 0) throw new Error('entries must be non-empty array');
+
+const ALLOWED_ORIGINS = new Set(['http://127.0.0.1:8788','http://localhost:8788']);
+const ALLOWED_METHODS = new Set(['GET']);
+
+for (const entry of d.entries) {
+  const ek = Object.keys(entry);
+  const expectedKeys = new Set(['method','url','status','type']);
+  for (const k of ek) {
+    if (!expectedKeys.has(k)) throw new Error('unknown entry key: ' + k);
+  }
+  for (const k of expectedKeys) {
+    if (!(k in entry)) throw new Error('missing entry key: ' + k);
+  }
+
+  if (!ALLOWED_METHODS.has(entry.method)) throw new Error('forbidden method: ' + entry.method + ' ' + entry.url);
+  if (entry.method === 'GET') {
+    const ok = [...ALLOWED_ORIGINS].some(origin => entry.url.startsWith(origin));
+    if (!ok) throw new Error('forbidden origin: ' + entry.url);
+  }
+}
+console.log('network.json: PASS');
+" 2>&1 || fail "network.json validation failed"
+
+# ── Validate console.json ──
+CON="${EVIDENCE_DIR}/console.json"
+node -e "
+const d = require('${CON}');
+if (!Array.isArray(d)) throw new Error('console.json must be array');
+const bad = d.filter(e => {
+  const t = typeof e === 'string' ? e : JSON.stringify(e);
+  return t.includes('nullifierSecret') || t.includes('trapdoor') || t.includes('witness');
+});
+if (bad.length > 0) throw new Error('console contains secrets');
+console.log('console.json: PASS (no secrets)');
+" 2>&1 || fail "console.json validation failed"
 
 echo ""
 ok "All evidence validation passed"

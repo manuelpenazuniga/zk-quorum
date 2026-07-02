@@ -209,42 +209,60 @@ export class RealR0ProvingAdapter {
   }
 
   private validateManifest(m: AssetManifest): void {
-    // Exact schema
+    // 1. Reject unknown/missing top-level keys FIRST (before any value checks)
+    const ALLOWED_TOP_KEYS = new Set([
+      "schema", "gate", "circuit", "rung", "proof_system", "curve",
+      "r1cs_sha256", "timestamp", "assets",
+    ]);
+    const raw = m as unknown as Record<string, unknown>;
+    const keys = Object.keys(raw);
+    for (const k of keys) {
+      if (!ALLOWED_TOP_KEYS.has(k)) {
+        throw new Error(`manifest error: unknown top-level key "${k}"`);
+      }
+    }
+    for (const k of ALLOWED_TOP_KEYS) {
+      if (!(k in raw)) {
+        throw new Error(`manifest error: missing top-level key "${k}"`);
+      }
+    }
+
+    // 2. Validate values
     if (m.schema !== "UPRE_BROWSER_MANIFEST_V1") throw new Error(`manifest error: unknown schema ${m.schema}`);
     if (m.gate !== "U-PRE-BROWSER-R0") throw new Error(`manifest error: unknown gate ${m.gate}`);
     if (m.circuit !== "PublicVoteR0") throw new Error(`manifest error: unknown circuit ${m.circuit}`);
     if (m.curve !== "bls12-381") throw new Error(`manifest error: unknown curve ${m.curve}`);
     if (m.proof_system !== "Groth16") throw new Error(`manifest error: unknown proof system ${m.proof_system}`);
     if (m.rung !== 0) throw new Error(`manifest error: rung must be 0`);
-    // Exact R1CS hash
     if (m.r1cs_sha256 !== "455204650f4dae22fcfabf65eb20f52924f4029f69a4d3977317e42b176055a6") {
       throw new Error(`manifest error: r1cs_sha256 does not match committed manifest`);
     }
-    // Timestamp must be present
-    if (typeof (m as unknown as Record<string, unknown>).timestamp !== "string") {
-      throw new Error("manifest error: missing timestamp");
-    }
-    // All required asset kinds must be present
-    const kinds = new Set(m.assets.map((a) => a.kind as string));
+    if (typeof raw.timestamp !== "string") throw new Error("manifest error: timestamp must be string");
+    if (!Array.isArray(raw.assets)) throw new Error("manifest error: assets must be array");
+
+    // 3. Validate assets
+    const assets = raw.assets as Array<Record<string, unknown>>;
+    const kinds = new Set(assets.map((a) => a.kind as string));
     for (const k of REQUIRED_ASSET_KINDS) {
       if (!kinds.has(k)) throw new Error(`manifest error: missing required asset kind: ${k}`);
     }
-    // Verify each asset entry
     const expectedAssets = [
-      { id: "main.wasm", kind: "wasm" as const },
-      { id: "r0_final.zkey", kind: "zkey" as const },
-      { id: "r0_vk.json", kind: "vk" as const },
+      { id: "main.wasm", kind: "wasm" },
+      { id: "r0_final.zkey", kind: "zkey" },
+      { id: "r0_vk.json", kind: "vk" },
     ];
     for (const expected of expectedAssets) {
-      const asset = m.assets.find((a) => a.kind === expected.kind);
+      const asset = assets.find((a) => a.kind === expected.kind);
       if (!asset) throw new Error(`manifest error: missing asset kind ${expected.kind}`);
       if (asset.id !== expected.id) throw new Error(`manifest error: asset kind ${expected.kind} must have id "${expected.id}", got "${asset.id}"`);
-      if (!/^[0-9a-f]{64}$/.test(asset.sha256)) throw new Error(`manifest error: ${expected.kind} SHA must be lowercase 64 hex`);
+      if (typeof asset.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(asset.sha256)) {
+        throw new Error(`manifest error: ${expected.kind} SHA must be lowercase 64 hex`);
+      }
       if (typeof asset.size !== "number" || asset.size <= 0 || !Number.isInteger(asset.size)) {
         throw new Error(`manifest error: ${expected.kind} size must be positive integer`);
       }
     }
-    if (m.assets.length !== 3) throw new Error("manifest error: must have exactly 3 assets");
+    if (assets.length !== 3) throw new Error("manifest error: must have exactly 3 assets");
   }
 
   /** Fetch raw VK file, verify hash+size against manifest, THEN parse JSON. */

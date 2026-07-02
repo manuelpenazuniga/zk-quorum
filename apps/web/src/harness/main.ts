@@ -5,17 +5,15 @@
  * Shows: stage, duration, verify result, sizes/hashes, memory
  * Exposes: window.__ZKQ_HARNESS_RESULT__ for automation
  *
- * NEVER renders or exposes secret inputs (nullifierSecret, trapdoor,
- * siblings, label, witness) in DOM, console, URL, storage, or worker
- * response. The fixture is embedded at build time and never shown.
+ * NEVER renders or exposes secret inputs in DOM, console, URL, storage,
+ * or worker response. Fixture embedded at build time.
  */
 
 import { createWorkerProverClient, type ProverClient } from "../worker/workerBoundary.js";
 import type { ProvingRequest, ProvingResponse } from "../adapters/provingAdapter.js";
 import { PROOF_BYTE_LEN, PUBLIC_SIGNALS_BYTE_LEN } from "../adapters/sorobanEncoding.js";
 
-// ── Embedded fixture (depth 10, from circuits/artifacts/fixtures/r0-vote-0.json) ──
-// Embedded at build time — never fetched from network, never shown in UI.
+// ── Embedded fixture (depth 10, r0-vote-0.json) ──
 
 const FIXTURE_INPUTS = {
   vote: "0",
@@ -28,8 +26,7 @@ const FIXTURE_INPUTS = {
   trapdoor: "333",
   stateIndex: "0",
   stateSiblings: [
-    "0",
-    "51576823595707970152643159819788304363803754756066229172775779360774743019614",
+    "0", "51576823595707970152643159819788304363803754756066229172775779360774743019614",
     "33646187916922823865935622258451714952164674255482660942215703235411158105736",
     "27818645450144846908742692719385898720249207574255739267233226464286012246073",
     "39404029000907277292464556408734412130261913210564395069696342233560511006152",
@@ -41,8 +38,7 @@ const FIXTURE_INPUTS = {
   ],
   associationIndex: "0",
   associationSiblings: [
-    "0",
-    "51576823595707970152643159819788304363803754756066229172775779360774743019614",
+    "0", "51576823595707970152643159819788304363803754756066229172775779360774743019614",
     "33646187916922823865935622258451714952164674255482660942215703235411158105736",
     "27818645450144846908742692719385898720249207574255739267233226464286012246073",
     "39404029000907277292464556408734412130261913210564395069696342233560511006152",
@@ -54,11 +50,7 @@ const FIXTURE_INPUTS = {
   ],
 };
 
-// nullifierHash = Poseidon255(nullifierSecret="222", electionScope=...) precomputed from E0
 const FIXTURE_NULLIFIER_HASH = "15309246400844181668452549791295656752795519099905502581510248520065524481077";
-
-// Public signals: [0] nullifierHash, [1] vote, [2] optionCount,
-// [3] stateRoot, [4] associationRoot, [5] electionScope
 const FIXTURE_PUBLIC_SIGNALS = [
   FIXTURE_NULLIFIER_HASH,
   FIXTURE_INPUTS.vote,
@@ -69,8 +61,6 @@ const FIXTURE_PUBLIC_SIGNALS = [
 ];
 
 const FIXTURE_ELECTION_ID = ("0x" + "ab".repeat(32)) as `0x${string}`;
-
-// ── Invalid witness fixture (wrong root) ──
 
 const INVALID_INPUTS: Record<string, unknown> = {
   ...FIXTURE_INPUTS,
@@ -91,9 +81,14 @@ let prover: ProverClient | null = null;
 let currentTest: string | null = null;
 let testResults: TestResult[] = [];
 
+interface MemoryInfo {
+  readonly peakMemory: "unsupported";
+  readonly heapLimitMB: number | null;
+}
+
 interface TestResult {
   test: string;
-  stage: "pass" | "fail" | "pending";
+  stage: "pass" | "fail";
   durationMs: number;
   message: string;
   proofHash: string | null;
@@ -101,20 +96,26 @@ interface TestResult {
   signalCount: number | null;
   proofByteLen: number | null;
   publicByteLen: number | null;
-  memoryAvailable: string;
+  peakMemory: "unsupported";
+  heapLimitMB: number | null;
 }
 
-function memoryInfo(): string {
+function memoryInfo(): MemoryInfo {
+  let heapLimitMB: number | null = null;
   if (typeof performance !== "undefined" && "memory" in performance) {
     const m = (performance as unknown as { memory?: { jsHeapSizeLimit?: number } }).memory;
     if (m?.jsHeapSizeLimit) {
-      return `${Math.round(m.jsHeapSizeLimit / 1024 / 1024)} MB limit`;
+      heapLimitMB = Math.round(m.jsHeapSizeLimit / 1024 / 1024);
     }
   }
-  return "unsupported";
+  return { peakMemory: "unsupported", heapLimitMB };
 }
 
-// ── UI helpers ──
+function memDisplay(m: MemoryInfo): string {
+  return `peak=unsupported limit=${m.heapLimitMB ?? "unsupported"}MB`;
+}
+
+// ── UI ──
 
 function setButtons(enabled: boolean) {
   btnValid.disabled = !enabled;
@@ -123,11 +124,10 @@ function setButtons(enabled: boolean) {
 }
 
 function appendResult(result: TestResult) {
-  const cls = result.stage === "pass" ? "pass" : result.stage === "fail" ? "fail" : "pending";
+  const cls = result.stage === "pass" ? "pass" : "fail";
   const div = document.createElement("div");
   div.className = `result ${cls}`;
-  div.innerHTML = `<strong>${result.test}</strong> [${result.stage.toUpperCase()}] <span class="mem">${result.memoryAvailable}</span><br>
-    <small>${result.message}</small>`;
+  div.innerHTML = `<strong>${result.test}</strong> [${result.stage.toUpperCase()}] <span class="mem">${memDisplay({ peakMemory: result.peakMemory, heapLimitMB: result.heapLimitMB })}</span><br><small>${result.message}</small>`;
   outputEl.appendChild(div);
 }
 
@@ -143,114 +143,109 @@ function exposeResult() {
     tests: testResults,
     timestamp: new Date().toISOString(),
     userAgent: navigator.userAgent,
-    memoryAvailable: memoryInfo(),
+    peakMemory: "unsupported" as const,
+    heapLimitMB: memoryInfo().heapLimitMB,
   };
 }
 
-// ── Run helpers ──
+// ── Run ──
 
-function runTest(name: string, inputs: Record<string, unknown>, expectedOk: boolean): void {
-  if (prover !== null) {
-    prover.terminate();
-  }
-  currentTest = name;
-  prover = createWorkerProverClient();
-
-  const start = performance.now();
-  const memStart = memoryInfo();
-
-  const req: ProvingRequest = {
+function makeReq(inputs: Record<string, unknown>): ProvingRequest {
+  return {
     kind: "prove-r0",
     electionId: FIXTURE_ELECTION_ID,
     publicSchemaId: "PUBLIC_SCHEMA_V1_R0",
     publicSignals: [...FIXTURE_PUBLIC_SIGNALS],
     inputs,
   };
+}
 
-  prover.prove(req, (_p) => {
-    // progress callback — not displayed in harness UI
+function pushResult(r: TestResult) {
+  testResults.push(r);
+}
+
+function runTest(name: string, inputs: Record<string, unknown>, expectOk: boolean): void {
+  if (prover !== null) prover.terminate();
+  currentTest = name;
+  prover = createWorkerProverClient();
+
+  const start = performance.now();
+  const mem = memoryInfo();
+
+  prover.prove(makeReq(inputs), (_p) => {
+    // progress not displayed in harness UI
   }).then((resp: ProvingResponse) => {
     const elapsed = Math.round(performance.now() - start);
-    if (currentTest !== name) return; // stale
 
-    if (resp.ok && expectedOk) {
-      const signals = resp.envelope.publicSignals;
-      const proofHex = resp.envelope.proofBytes;
-      const proofByteLen = (proofHex.length - 2) / 2;
-      testResults.push({
-        test: name,
+    // Handle cancel: the boundary resolves (not rejects) with reason "cancelled"
+    if (!resp.ok && resp.reason === "cancelled") {
+      pushResult({
+        test: "cancel-r0",
         stage: "pass",
         durationMs: elapsed,
-        message: `Proof generated in ${elapsed}ms. Signals: ${signals.length}. Proof: ${proofByteLen} bytes. Hash: ${resp.proofHash.slice(0, 18)}...`,
-        proofHash: resp.proofHash,
-        publicSignalsHash: resp.publicSignalsHash,
-        signalCount: signals.length,
-        proofByteLen,
-        publicByteLen: PUBLIC_SIGNALS_BYTE_LEN,
-        memoryAvailable: memStart,
+        message: `Cancelled in ${elapsed}ms`,
+        proofHash: null, publicSignalsHash: null, signalCount: null,
+        proofByteLen: null, publicByteLen: null,
+        peakMemory: "unsupported", heapLimitMB: mem.heapLimitMB,
       });
-    } else if (!resp.ok && !expectedOk) {
-      testResults.push({
-        test: name,
-        stage: "pass",
-        durationMs: elapsed,
-        message: `Correctly rejected: ${resp.reason}`,
-        proofHash: null,
-        publicSignalsHash: null,
-        signalCount: null,
-        proofByteLen: null,
-        publicByteLen: null,
-        memoryAvailable: memStart,
-      });
+      finish();
+      return;
+    }
+
+    if (resp.ok === expectOk) {
+      if (resp.ok) {
+        const signals = resp.envelope.publicSignals;
+        const proofByteLen = (resp.envelope.proofBytes.length - 2) / 2;
+        pushResult({
+          test: name,
+          stage: "pass",
+          durationMs: elapsed,
+          message: `Proof generated in ${elapsed}ms. Signals: ${signals.length}. Proof: ${proofByteLen} bytes.`,
+          proofHash: resp.proofHash,
+          publicSignalsHash: resp.publicSignalsHash,
+          signalCount: signals.length,
+          proofByteLen,
+          publicByteLen: PUBLIC_SIGNALS_BYTE_LEN,
+          peakMemory: "unsupported", heapLimitMB: mem.heapLimitMB,
+        });
+      } else {
+        pushResult({
+          test: name,
+          stage: "pass",
+          durationMs: elapsed,
+          message: `Correctly rejected: ${resp.reason}`,
+          proofHash: null, publicSignalsHash: null, signalCount: null,
+          proofByteLen: null, publicByteLen: null,
+          peakMemory: "unsupported", heapLimitMB: mem.heapLimitMB,
+        });
+      }
     } else {
-      testResults.push({
+      pushResult({
         test: name,
         stage: "fail",
         durationMs: elapsed,
-        message: resp.ok
-          ? `Expected failure but got success (${elapsed}ms)`
-          : `Unexpected failure: ${resp.reason}`,
+        message: resp.ok ? `Expected failure but got success` : `Unexpected: ${resp.reason}`,
         proofHash: resp.ok ? resp.proofHash : null,
         publicSignalsHash: resp.ok ? resp.publicSignalsHash : null,
         signalCount: resp.ok ? resp.envelope.publicSignals.length : null,
         proofByteLen: resp.ok ? PROOF_BYTE_LEN : null,
         publicByteLen: resp.ok ? PUBLIC_SIGNALS_BYTE_LEN : null,
-        memoryAvailable: memStart,
+        peakMemory: "unsupported", heapLimitMB: mem.heapLimitMB,
       });
     }
     finish();
   }).catch((e: unknown) => {
     const elapsed = Math.round(performance.now() - start);
-    if (currentTest !== name) return;
     const msg = e instanceof Error ? e.message : String(e);
-    // Only cancelled is an expected non-ok outcome
-    if (msg === "cancelled") {
-      testResults.push({
-        test: name,
-        stage: "pass",
-        durationMs: elapsed,
-        message: `Cancelled in ${elapsed}ms`,
-        proofHash: null,
-        publicSignalsHash: null,
-        signalCount: null,
-        proofByteLen: null,
-        publicByteLen: null,
-        memoryAvailable: memStart,
-      });
-    } else {
-      testResults.push({
-        test: name,
-        stage: "fail",
-        durationMs: elapsed,
-        message: `Error: ${msg}`,
-        proofHash: null,
-        publicSignalsHash: null,
-        signalCount: null,
-        proofByteLen: null,
-        publicByteLen: null,
-        memoryAvailable: memStart,
-      });
-    }
+    pushResult({
+      test: name,
+      stage: "fail",
+      durationMs: elapsed,
+      message: `Error: ${msg}`,
+      proofHash: null, publicSignalsHash: null, signalCount: null,
+      proofByteLen: null, publicByteLen: null,
+      peakMemory: "unsupported", heapLimitMB: mem.heapLimitMB,
+    });
     finish();
   });
 }
@@ -265,9 +260,17 @@ function finish() {
 
 // ── Event handlers ──
 
+function nextValidName(): string {
+  // If cancel-r0 exists without recovery-r0, name it recovery-r0
+  const hasCancel = testResults.some((r) => r.test === "cancel-r0");
+  const hasRecovery = testResults.some((r) => r.test === "recovery-r0");
+  if (hasCancel && !hasRecovery) return "recovery-r0";
+  return "valid-r0";
+}
+
 btnValid.addEventListener("click", () => {
   setButtons(false);
-  runTest("valid-r0", FIXTURE_INPUTS, true);
+  runTest(nextValidName(), FIXTURE_INPUTS, true);
 });
 
 btnInvalid.addEventListener("click", () => {
@@ -277,8 +280,6 @@ btnInvalid.addEventListener("click", () => {
 
 btnCancel.addEventListener("click", () => {
   if (prover !== null && currentTest !== null) {
-    // Don't reset currentTest — the resolver/catch handler manages state
-    // and checks currentTest for staleness
     prover.cancel();
   }
 });
