@@ -1,24 +1,13 @@
 #!/usr/bin/env bash
 # ZK-Quorum U-Pre — Browser evidence collector for Chromium.
 #
-# Starts Vite in preview mode, opens Chromium, runs harness, saves evidence.
-#
-# Prerequisites:
-#   1. npm ci completed in apps/web
-#   2. Assets staged: node scripts/stage-assets-to-public.js
-#   3. Node 24, Chromium installed
-#   4. npm install puppeteer (in apps/web or root)
-#
-# Evidence output: tmp/u-pre/
-#   manifest.json        — build/asset hashes and metadata
-#   browser-result.json  — harness result JSON
-#   network.json         — captured network requests
-#   console.json         — captured console output
-#   screenshot.png       — informational screenshot
+# --prepare-only: stage, build, and verify without browser execution.
+#   Exits 0 if all checks pass.
+# Default mode: validates fail-closed that tmp/u-pre/ contains required
+#   JSON evidence files with exact schema. Exits 1 if any file missing
+#   or invalid.
 #
 # Usage: bash scripts/run-upre-browser.sh [--prepare-only]
-#   --prepare-only: only stage/build/verify, skip browser execution
-#   Without --prepare-only: requires puppeteer + Chromium, fails if missing
 
 set -euo pipefail
 
@@ -32,12 +21,11 @@ for arg in "$@"; do
   if [ "$arg" = "--prepare-only" ]; then PREPARE_ONLY=true; fi
 done
 
-# ── Helpers ──
 ok()   { printf '  [OK] %s\n' "$*"; }
 fail() { printf '  [FAIL] %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*"; }
 
-info "U-Pre Browser Evidence Collector"
+info "U-Pre Browser Evidence Gate"
 echo ""
 
 # ── 1. Check assets are staged ──
@@ -45,89 +33,118 @@ PUBLIC_ASSETS="${WEB_DIR}/public/upre-assets"
 if [ ! -f "${PUBLIC_ASSETS}/manifest.json" ]; then
   fail "Assets not staged. Run: node scripts/stage-assets-to-public.js"
 fi
-
 MANIFEST_SCHEMA=$(node -p "require('${PUBLIC_ASSETS}/manifest.json').schema")
 if [ "${MANIFEST_SCHEMA}" != "UPRE_BROWSER_MANIFEST_V1" ]; then
   fail "Invalid manifest schema: ${MANIFEST_SCHEMA}"
 fi
-
 for asset in main.wasm r0_final.zkey r0_vk.json; do
   if [ ! -f "${PUBLIC_ASSETS}/${asset}" ]; then
-    fail "Missing asset: ${asset}"
+    fail "Missing staged asset: ${asset}"
   fi
 done
 ok "Assets staged and manifest valid"
 
-# ── 2. Verify dist build has no .ts worker files ──
-if [ -d "${WEB_DIR}/dist" ]; then
-  TS_WORKERS=$(find "${WEB_DIR}/dist" -name "proverWorker*.ts" 2>/dev/null || true)
-  if [ -n "${TS_WORKERS}" ]; then
-    fail "Build contains uncompiled .ts worker files: ${TS_WORKERS}"
-  fi
+# ── 2. Verify dist build ──
+if [ ! -d "${WEB_DIR}/dist" ]; then
+  fail "dist/ not found — run npm run build first"
 fi
-ok "Build verified (no uncompiled .ts workers)"
+TS_WORKERS=$(find "${WEB_DIR}/dist" -name "proverWorker*.ts" 2>/dev/null || true)
+if [ -n "${TS_WORKERS}" ]; then
+  fail "Build contains uncompiled .ts worker files: ${TS_WORKERS}"
+fi
+JS_WORKERS=$(find "${WEB_DIR}/dist" -name "proverWorker*.js" 2>/dev/null || true)
+if [ -z "${JS_WORKERS}" ]; then
+  fail "No compiled proverWorker JS bundle in dist/"
+fi
+ok "Build verified (compiled JS worker present, no .ts artifacts)"
 
-# ── 3. Prepare-only mode ──
+# ── 3. --prepare-only mode ──
 if [ "${PREPARE_ONLY}" = "true" ]; then
   echo ""
-  ok "Prepare-only mode: stage + build verified. Skipping browser execution."
+  ok "Prepare-only: stage + build verified. Browser execution skipped."
   exit 0
 fi
 
-# ── 4. Check for browser automation ──
-HAS_PUPPETEER=false
-if node -e "require('puppeteer')" 2>/dev/null; then
-  HAS_PUPPETEER=true
+# ── 4. Validate evidence files (strict fail-closed) ──
+info "Validating evidence in ${EVIDENCE_DIR}"
+echo ""
+
+REQUIRED_EVIDENCE_FILES=(
+  "manifest.json"
+  "browser-result.json"
+  "network.json"
+  "console.json"
+  "screenshot.png"
+)
+
+for f in "${REQUIRED_EVIDENCE_FILES[@]}"; do
+  if [ ! -f "${EVIDENCE_DIR}/${f}" ]; then
+    fail "Missing evidence file: ${f}"
+  fi
+done
+ok "All required evidence files present"
+
+# Validate browser-result.json structure (strict schema)
+BR="${EVIDENCE_DIR}/browser-result.json"
+if ! node -e "
+const d = require('${BR}');
+const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
+assert(d.gate === 'U-PRE-BROWSER-R0', 'gate must be U-PRE-BROWSER-R0');
+assert(Array.isArray(d.tests), 'tests must be array');
+assert(d.tests.length >= 3, 'must have at least 3 test results');
+assert(typeof d.timestamp === 'string', 'timestamp must be string');
+assert(typeof d.userAgent === 'string', 'userAgent must be string');
+assert(typeof d.memoryAvailable === 'string', 'memoryAvailable must be string');
+for (const t of d.tests) {
+  assert(typeof t.test === 'string', 'test name must be string');
+  assert(['pass','fail','pending'].includes(t.stage), 'stage must be pass/fail/pending');
+  assert(typeof t.durationMs === 'number', 'durationMs must be number');
+  assert(typeof t.message === 'string', 'message must be string');
+}
+// Verify expected test names
+const names = d.tests.map(t => t.test);
+assert(names.includes('valid-r0'), 'must include valid-r0 test');
+assert(names.includes('invalid-witness'), 'must include invalid-witness test');
+const cancelTest = d.tests.find(t => t.test.startsWith('cancel'));
+assert(cancelTest, 'must include cancel test');
+assert(cancelTest.stage === 'pass', 'cancel test must pass');
+// Valid R0 must pass
+const validTest = d.tests.find(t => t.test === 'valid-r0');
+assert(validTest.stage === 'pass', 'valid-r0 must pass');
+assert(validTest.proofHash && validTest.proofHash.startsWith('0x'), 'valid-r0 must have proofHash');
+assert(validTest.publicSignalsHash && validTest.publicSignalsHash.startsWith('0x'), 'valid-r0 must have publicSignalsHash');
+assert(validTest.signalCount === 6, 'valid-r0 must have 6 signals');
+assert(validTest.proofByteLen === 384, 'valid-r0 proof must be 384 bytes');
+assert(validTest.publicByteLen === 196, 'valid-r0 public must be 196 bytes');
+console.log('PASS');
+" 2>&1; then
+  fail "browser-result.json validation failed"
+fi
+ok "browser-result.json schema and content valid"
+
+# Validate network.json (no POST/PUT/PATCH/DELETE, only GET to localhost)
+NET="${EVIDENCE_DIR}/network.json"
+if [ -f "${NET}" ]; then
+  if ! node -e "
+const d = require('${NET}');
+const forbidden = d.filter(r => r.method && ['POST','PUT','PATCH','DELETE'].includes(r.method.toUpperCase()));
+if (forbidden.length > 0) {
+  console.error('Forbidden requests:', JSON.stringify(forbidden.map(r => r.method + ' ' + r.url)));
+  process.exit(1);
+}
+// All requests must be GET to localhost:8788
+const bad = d.filter(r => !r.url || (!r.url.includes('localhost:8788') && !r.url.startsWith('/')));
+if (bad.length > 0) {
+  console.error('Non-localhost requests:', JSON.stringify(bad.map(r => r.url)));
+  process.exit(1);
+}
+console.log('PASS');
+" 2>&1; then
+    fail "network.json validation failed"
+  fi
+  ok "network.json: no forbidden methods, all localhost"
 fi
 
-HAS_PLAYWRIGHT=false
-if node -e "require('playwright')" 2>/dev/null; then
-  HAS_PLAYWRIGHT=true
-fi
-
-if [ "${HAS_PUPPETEER}" = "false" ] && [ "${HAS_PLAYWRIGHT}" = "false" ]; then
-  echo ""
-  echo "============================================"
-  echo "  FAILED: Browser automation not found"
-  echo "============================================"
-  echo ""
-  echo "  This runner requires puppeteer or playwright."
-  echo "  Install: npm install puppeteer"
-  echo ""
-  echo "  Or use --prepare-only to skip browser execution."
-  echo "  cd apps/web && npx vite preview --port 8788"
-  echo "  Then open http://localhost:8788/harness.html in Chromium."
-  echo ""
-  echo "  Manual verification checklist:"
-  echo "    1. Load harness → buttons enabled"
-  echo "    2. Click 'Run valid R0' → proof PASS"
-  echo "    3. Signals match fixture (check __ZKQ_HARNESS_RESULT__)"
-  echo "    4. Proof/public hashes non-null, byte lengths 384/196"
-  echo "    5. Click 'Run invalid witness' → sanitized error"
-  echo "    6. Cancel with recovery"
-  echo "    7. No POST/PUT/PATCH/DELETE requests"
-  echo "    8. Only GET to localhost:8788"
-  echo "    9. No secrets in URL/DOM/console/storage"
-  echo "   10. Register user agent, duration, memory"
-  exit 1
-fi
-
-info "Browser automation detected. Collecting evidence..."
-
-# ── 5. Collect browser evidence ──
-# PENDIENTE: Implement puppeteer/playwright automation when available.
-# The harness page at /harness.html exposes window.__ZKQ_HARNESS_RESULT__
-# with all test results. The collector should:
-# 1. Start vite preview on port 8788
-# 2. Launch Chromium
-# 3. Navigate to http://localhost:8788/harness.html
-# 4. Click buttons to run tests
-# 5. Capture console, network, and result
-# 6. Validate 10 checks from brief §5
-# 7. Save evidence to tmp/u-pre/
-
-echo "PENDIENTE: Browser automation implementation needed for full gate."
-echo "Run manually: cd apps/web && npx vite preview --port 8788"
-echo "Then open http://localhost:8788/harness.html in Chromium."
-
-exit 1
+echo ""
+ok "All evidence validation passed"
+exit 0

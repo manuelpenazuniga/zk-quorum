@@ -117,30 +117,33 @@ function serializeG1Uncompressed(g1: G1Json, label: string): Uint8Array {
 }
 
 /**
- * G2 uncompressed serialization matching arkworks' G2Affine::serialize_uncompressed.
+ * G2 uncompressed serialization matching circom2soroban on-wire bytes.
  *
+ * circom2soroban maps:  x0 = g2[0][0], x1 = g2[0][1] → Fq2::new(x0, x1)
  * arkworks Fq2::serialize_uncompressed writes c1 first, then c0.
- * snarkjs pi_b = [[x_c1, x_c0], [y_c1, y_c0], ["1","0"]].
- * On-wire: x_c1(48) | x_c0(48) | y_c1(48) | y_c0(48) = 192 bytes
+ * Therefore on-wire: g2[0][1] | g2[0][0] | g2[1][1] | g2[1][0]
+ *
+ * Cross-verified with real E0 proof.bin (xxd offset 96):
+ *   snarkjs pi_b[0]=["03b879…","065ed6…"] → proof.bin[96]="065ed6…"
+ *   confirming g2[0][1] (snarkjs index 1) precedes g2[0][0] on-wire.
  */
 function serializeG2Uncompressed(g2: G2Json, label: string): Uint8Array {
   const flag = g2[2];
   if (flag[0] !== "1" || flag[1] !== "0") {
     throw new Error(`${label}: flag must be ["1","0"] (affine), got ["${flag[0]}","${flag[1]}"]`);
   }
-  // snarkjs: pi_b[0][0] = x_c1, pi_b[0][1] = x_c0
-  //          pi_b[1][0] = y_c1, pi_b[1][1] = y_c0
-  const xc1 = parseFq(g2[0][0]); // pi_b[0][0] = x.c1
-  const xc0 = parseFq(g2[0][1]); // pi_b[0][1] = x.c0
-  const yc1 = parseFq(g2[1][0]); // pi_b[1][0] = y.c1
-  const yc0 = parseFq(g2[1][1]); // pi_b[1][1] = y.c0
+  // arkworks convention: g2[0][0] → c0, g2[0][1] → c1
+  // serialized: c1||c0 = g2[0][1]|g2[0][0]  then g2[1][1]|g2[1][0]
+  const x_c0 = parseFq(g2[0][0]);
+  const x_c1 = parseFq(g2[0][1]);
+  const y_c0 = parseFq(g2[1][0]);
+  const y_c1 = parseFq(g2[1][1]);
   const out = new Uint8Array(G2_UNCOMPRESSED);
-  // On-wire: x_c1 | x_c0 | y_c1 | y_c0
-  let off = 0;
-  out.set(bigintToBytesBE(xc1, FQ_BYTE_LEN), off); off += FQ_BYTE_LEN;
-  out.set(bigintToBytesBE(xc0, FQ_BYTE_LEN), off); off += FQ_BYTE_LEN;
-  out.set(bigintToBytesBE(yc1, FQ_BYTE_LEN), off); off += FQ_BYTE_LEN;
-  out.set(bigintToBytesBE(yc0, FQ_BYTE_LEN), off);
+  // c1||c0 for each Fq2
+  out.set(bigintToBytesBE(x_c1, FQ_BYTE_LEN), 0);
+  out.set(bigintToBytesBE(x_c0, FQ_BYTE_LEN), FQ_BYTE_LEN);
+  out.set(bigintToBytesBE(y_c1, FQ_BYTE_LEN), FQ_BYTE_LEN * 2);
+  out.set(bigintToBytesBE(y_c0, FQ_BYTE_LEN), FQ_BYTE_LEN * 3);
   return out;
 }
 

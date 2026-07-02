@@ -123,17 +123,17 @@ describe("Soroban proof encoding (golden)", () => {
     expect(encoded.slice(288, 384).length).toBe(96);
   });
 
-  it("G2 serialization uses c1||c0 order (arkworks convention)", () => {
-    // snarkjs pi_b = [[x_c1, x_c0], [y_c1, y_c0], ["1","0"]]
-    // arkworks uncompressed G2 = x_c1(48) | x_c0(48) | y_c1(48) | y_c0(48)
-    // Use distinct values to verify ordering
+  it("G2 on-wire: g2[0][1]||g2[0][0]||g2[1][1]||g2[1][0] (xxd verified)", () => {
+    // Real E0 evidence: snarkjs pi_b[0]=["03b879…","065ed6…"]
+    // → proof.bin offset 96 starts "065ed6…" (g2[0][1] first)
+    // Use distinct values to verify the ordering
     const proof: ProofJson = {
       protocol: "groth16",
       curve: "bls12381",
       pi_a: ["0", "0", "1"],
       pi_b: [
-        ["100", "200"], // x.c1=100, x.c0=200
-        ["300", "400"], // y.c1=300, y.c0=400
+        ["100", "200"], // g2[0][0]=100, g2[0][1]=200
+        ["300", "400"], // g2[1][0]=300, g2[1][1]=400
         ["1", "0"],
       ],
       pi_c: ["0", "0", "1"],
@@ -142,25 +142,25 @@ describe("Soroban proof encoding (golden)", () => {
     // B starts at offset 96
     const b = encoded.slice(96, 288);
 
-    // First 48 bytes: x.c1 = 100
+    // offset 0: g2[0][1] = 200 (snarkjs index 1 first, c1 in arkworks)
     let val = 0n;
     for (let i = 0; i < 48; i++) val = (val << 8n) | BigInt(b[i]!);
-    expect(val).toBe(100n);
-
-    // Next 48 bytes (offset 48): x.c0 = 200
-    val = 0n;
-    for (let i = 48; i < 96; i++) val = (val << 8n) | BigInt(b[i]!);
     expect(val).toBe(200n);
 
-    // Next 48 bytes (offset 96): y.c1 = 300
+    // offset 48: g2[0][0] = 100 (snarkjs index 0 second, c0 in arkworks)
+    val = 0n;
+    for (let i = 48; i < 96; i++) val = (val << 8n) | BigInt(b[i]!);
+    expect(val).toBe(100n);
+
+    // offset 96: g2[1][1] = 400
     val = 0n;
     for (let i = 96; i < 144; i++) val = (val << 8n) | BigInt(b[i]!);
-    expect(val).toBe(300n);
+    expect(val).toBe(400n);
 
-    // Next 48 bytes (offset 144): y.c0 = 400
+    // offset 144: g2[1][0] = 300
     val = 0n;
     for (let i = 144; i < 192; i++) val = (val << 8n) | BigInt(b[i]!);
-    expect(val).toBe(400n);
+    expect(val).toBe(300n);
   });
 
   it("rejects wrong protocol", () => {

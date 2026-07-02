@@ -35,14 +35,8 @@ async function initAdapter(): Promise<void> {
   }
   const manifest = await manifestResp.json() as AssetManifest;
 
-  // VK is mandatory
-  const vkResp = await fetch(vkUrl);
-  if (!vkResp.ok) {
-    throw new Error(`manifest error: cannot fetch VK (HTTP ${vkResp.status})`);
-  }
-  const vkJson = await vkResp.json();
-
-  adapter = new RealR0ProvingAdapter(wasmUrl, zkeyUrl, vkJson, manifest);
+  // Adapter will fetch and verify all three assets (wasm, zkey, vk) during prove()
+  adapter = new RealR0ProvingAdapter(wasmUrl, zkeyUrl, vkUrl, manifest);
   adapterReady = true;
 }
 

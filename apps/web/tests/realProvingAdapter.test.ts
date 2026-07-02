@@ -10,7 +10,8 @@ function makeValidManifest(): AssetManifest {
     rung: 0,
     proof_system: "Groth16",
     curve: "bls12-381",
-    r1cs_sha256: "0".repeat(64),
+    r1cs_sha256: "455204650f4dae22fcfabf65eb20f52924f4029f69a4d3977317e42b176055a6",
+    timestamp: "2026-07-02T00:00:00Z",
     assets: [
       { id: "main.wasm", kind: "wasm", sha256: "0".repeat(64), size: 100 },
       { id: "r0_final.zkey", kind: "zkey", sha256: "0".repeat(64), size: 100 },
@@ -36,7 +37,7 @@ function reasonOf(r: { ok: boolean; reason?: string }): string {
 
 describe("RealProvingAdapter error handling", () => {
   it("rejects prove-r1 requests", async () => {
-    const adapter = new RealR0ProvingAdapter("wasm", "zkey", {}, makeValidManifest());
+    const adapter = new RealR0ProvingAdapter("wasm", "zkey", "vk", makeValidManifest());
     const req: ProvingRequest = {
       kind: "prove-r1",
       electionId: ("0x" + "01".repeat(32)) as `0x${string}`,
@@ -50,7 +51,7 @@ describe("RealProvingAdapter error handling", () => {
   });
 
   it("rejects wrong schema", async () => {
-    const adapter = new RealR0ProvingAdapter("wasm", "zkey", {}, makeValidManifest());
+    const adapter = new RealR0ProvingAdapter("wasm", "zkey", "vk", makeValidManifest());
     const req: ProvingRequest = {
       kind: "prove-r0",
       electionId: ("0x" + "01".repeat(32)) as `0x${string}`,
@@ -64,7 +65,7 @@ describe("RealProvingAdapter error handling", () => {
   });
 
   it("rejects unknown request keys", async () => {
-    const adapter = new RealR0ProvingAdapter("wasm", "zkey", {}, makeValidManifest());
+    const adapter = new RealR0ProvingAdapter("wasm", "zkey", "vk", makeValidManifest());
     const req = { ...makeValidReq(), extraKey: true } as unknown as ProvingRequest;
     const r = await adapter.prove(req, () => undefined);
     expect(r.ok).toBe(false);
@@ -72,7 +73,7 @@ describe("RealProvingAdapter error handling", () => {
   });
 
   it("rejects non-canonical publicSignals", async () => {
-    const adapter = new RealR0ProvingAdapter("wasm", "zkey", {}, makeValidManifest());
+    const adapter = new RealR0ProvingAdapter("wasm", "zkey", "vk", makeValidManifest());
     const req = { ...makeValidReq(), publicSignals: ["0x1", "2", "3", "4", "5", "6"] };
     const r = await adapter.prove(req, () => undefined);
     expect(r.ok).toBe(false);
@@ -80,7 +81,7 @@ describe("RealProvingAdapter error handling", () => {
   });
 
   it("cancel returns early", async () => {
-    const adapter = new RealR0ProvingAdapter("wasm", "zkey", {}, makeValidManifest());
+    const adapter = new RealR0ProvingAdapter("wasm", "zkey", "vk", makeValidManifest());
     adapter.cancel();
     const r = await adapter.prove(makeValidReq(), () => undefined);
     expect(r.ok).toBe(false);
@@ -90,38 +91,38 @@ describe("RealProvingAdapter error handling", () => {
 
 describe("RealProvingAdapter manifest validation", () => {
   it("accepts valid manifest", () => {
-    const adapter = new RealR0ProvingAdapter("wasm", "zkey", {}, makeValidManifest());
+    const adapter = new RealR0ProvingAdapter("wasm", "zkey", "vk", makeValidManifest());
     expect(adapter).toBeInstanceOf(RealR0ProvingAdapter);
   });
 
   it("rejects unknown manifest schema", () => {
     const m = { ...makeValidManifest(), schema: "UNKNOWN" as const };
-    expect(() => new RealR0ProvingAdapter("w", "z", {}, m as unknown as AssetManifest)).toThrow(/manifest error/);
+    expect(() => new RealR0ProvingAdapter("w", "z", "v", m as unknown as AssetManifest)).toThrow(/manifest error/);
   });
 
   it("rejects wrong gate", () => {
     const m = { ...makeValidManifest(), gate: "WRONG" as const };
-    expect(() => new RealR0ProvingAdapter("w", "z", {}, m as unknown as AssetManifest)).toThrow(/manifest error/);
+    expect(() => new RealR0ProvingAdapter("w", "z", "v", m as unknown as AssetManifest)).toThrow(/manifest error/);
   });
 
   it("rejects wrong circuit", () => {
     const m = { ...makeValidManifest(), circuit: "Wrong" as const };
-    expect(() => new RealR0ProvingAdapter("w", "z", {}, m as unknown as AssetManifest)).toThrow(/manifest error/);
+    expect(() => new RealR0ProvingAdapter("w", "z", "v", m as unknown as AssetManifest)).toThrow(/manifest error/);
   });
 
   it("rejects wrong rung", () => {
     const m = { ...makeValidManifest(), rung: 1 as const };
-    expect(() => new RealR0ProvingAdapter("w", "z", {}, m as unknown as AssetManifest)).toThrow(/manifest error/);
+    expect(() => new RealR0ProvingAdapter("w", "z", "v", m as unknown as AssetManifest)).toThrow(/manifest error/);
   });
 
   it("rejects wrong curve", () => {
     const m = { ...makeValidManifest(), curve: "bn254" as const };
-    expect(() => new RealR0ProvingAdapter("w", "z", {}, m as unknown as AssetManifest)).toThrow(/manifest error/);
+    expect(() => new RealR0ProvingAdapter("w", "z", "v", m as unknown as AssetManifest)).toThrow(/manifest error/);
   });
 
   it("rejects missing asset kinds", () => {
     const m = { ...makeValidManifest(), assets: [{ id: "x", kind: "zkey" as const, sha256: "0".repeat(64), size: 1 }] };
-    expect(() => new RealR0ProvingAdapter("w", "z", {}, m as unknown as AssetManifest)).toThrow(/manifest error/);
+    expect(() => new RealR0ProvingAdapter("w", "z", "v", m as unknown as AssetManifest)).toThrow(/manifest error/);
   });
 });
 

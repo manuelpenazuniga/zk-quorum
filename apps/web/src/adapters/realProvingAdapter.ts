@@ -25,6 +25,7 @@ export interface AssetManifest {
   readonly proof_system: "Groth16";
   readonly curve: "bls12-381";
   readonly r1cs_sha256: string;
+  readonly timestamp: string;
   readonly assets: ReadonlyArray<{
     readonly id: string;
     readonly kind: "wasm" | "zkey" | "vk";
@@ -85,13 +86,14 @@ export class RealR0ProvingAdapter {
   private cancelled = false;
   private wasmUrl: string;
   private zkeyUrl: string;
-  private vkJson: object;
+  private vkUrl: string;
   private manifest: AssetManifest;
+  private vkJson: object | null = null;
 
-  constructor(wasmUrl: string, zkeyUrl: string, vkJson: object, manifest: AssetManifest) {
+  constructor(wasmUrl: string, zkeyUrl: string, vkUrl: string, manifest: AssetManifest) {
     this.wasmUrl = wasmUrl;
     this.zkeyUrl = zkeyUrl;
-    this.vkJson = vkJson;
+    this.vkUrl = vkUrl;
     this.manifest = manifest;
     // Validate manifest structure immediately
     this.validateManifest(manifest);
@@ -116,7 +118,7 @@ export class RealR0ProvingAdapter {
 
     if (this.cancelled) throw new Error("cancelled");
 
-    // Verify manifest structure (validated in constructor too, double-check)
+    // Verify manifest structure
     this.validateManifest(this.manifest);
 
     // Dynamically import snarkjs (only works in worker context)
@@ -127,10 +129,12 @@ export class RealR0ProvingAdapter {
 
     onProgress({ stage: "witness", fraction: 0.05 });
 
-    // Verify ALL THREE assets (wasm, zkey, vk) hash+size against manifest
+    // Verify ALL THREE assets (wasm, zkey, vk) hash+size against manifest.
+    // VK is fetched as raw bytes, hashed, THEN parsed — ensuring the hash
+    // matches what the staging script computed on the raw file.
     await this.verifyAssetHash(this.wasmUrl, "wasm", this.manifest);
     await this.verifyAssetHash(this.zkeyUrl, "zkey", this.manifest);
-    await this.verifyAssetHash(this.vkJson as unknown as string, "vk", this.manifest, true);
+    await this.fetchAndVerifyVk();
 
     if (this.cancelled) throw new Error("cancelled");
 
@@ -155,8 +159,8 @@ export class RealR0ProvingAdapter {
       throw new Error(`prover error: expected 6 public signals, got ${Array.isArray(publicSignals) ? publicSignals.length : "non-array"}`);
     }
 
-    // Verify proof with committed VK
-    const verifyOk = await groth16.verify(this.vkJson, publicSignals, proof);
+    // Verify proof with committed VK (fetched raw, hash-verified, then parsed)
+    const verifyOk = await groth16.verify(this.vkJson!, publicSignals, proof);
     if (!verifyOk) {
       throw new Error("verify error: snarkjs verification failed");
     }
@@ -205,39 +209,73 @@ export class RealR0ProvingAdapter {
   }
 
   private validateManifest(m: AssetManifest): void {
+    // Exact schema
     if (m.schema !== "UPRE_BROWSER_MANIFEST_V1") throw new Error(`manifest error: unknown schema ${m.schema}`);
     if (m.gate !== "U-PRE-BROWSER-R0") throw new Error(`manifest error: unknown gate ${m.gate}`);
     if (m.circuit !== "PublicVoteR0") throw new Error(`manifest error: unknown circuit ${m.circuit}`);
     if (m.curve !== "bls12-381") throw new Error(`manifest error: unknown curve ${m.curve}`);
     if (m.proof_system !== "Groth16") throw new Error(`manifest error: unknown proof system ${m.proof_system}`);
     if (m.rung !== 0) throw new Error(`manifest error: rung must be 0`);
-    if (!Array.isArray(m.assets) || m.assets.length < 3) throw new Error("manifest error: must have at least 3 assets (wasm, zkey, vk)");
-    // All three required kinds must be present
-    const kinds = new Set(m.assets.map((a) => a.kind));
+    // Exact R1CS hash
+    if (m.r1cs_sha256 !== "455204650f4dae22fcfabf65eb20f52924f4029f69a4d3977317e42b176055a6") {
+      throw new Error(`manifest error: r1cs_sha256 does not match committed manifest`);
+    }
+    // Timestamp must be present
+    if (typeof (m as unknown as Record<string, unknown>).timestamp !== "string") {
+      throw new Error("manifest error: missing timestamp");
+    }
+    // All required asset kinds must be present
+    const kinds = new Set(m.assets.map((a) => a.kind as string));
     for (const k of REQUIRED_ASSET_KINDS) {
       if (!kinds.has(k)) throw new Error(`manifest error: missing required asset kind: ${k}`);
     }
+    // Verify each asset entry
+    const expectedAssets = [
+      { id: "main.wasm", kind: "wasm" as const },
+      { id: "r0_final.zkey", kind: "zkey" as const },
+      { id: "r0_vk.json", kind: "vk" as const },
+    ];
+    for (const expected of expectedAssets) {
+      const asset = m.assets.find((a) => a.kind === expected.kind);
+      if (!asset) throw new Error(`manifest error: missing asset kind ${expected.kind}`);
+      if (asset.id !== expected.id) throw new Error(`manifest error: asset kind ${expected.kind} must have id "${expected.id}", got "${asset.id}"`);
+      if (!/^[0-9a-f]{64}$/.test(asset.sha256)) throw new Error(`manifest error: ${expected.kind} SHA must be lowercase 64 hex`);
+      if (typeof asset.size !== "number" || asset.size <= 0 || !Number.isInteger(asset.size)) {
+        throw new Error(`manifest error: ${expected.kind} size must be positive integer`);
+      }
+    }
+    if (m.assets.length !== 3) throw new Error("manifest error: must have exactly 3 assets");
   }
 
-  private async verifyAssetHash(url: string, kind: string, manifest: AssetManifest, isJson: boolean = false): Promise<void> {
+  /** Fetch raw VK file, verify hash+size against manifest, THEN parse JSON. */
+  private async fetchAndVerifyVk(): Promise<object> {
+    if (this.vkJson !== null) return this.vkJson; // cached
+    const asset = this.manifest.assets.find((a) => a.kind === "vk");
+    if (!asset) throw new Error("manifest error: no vk asset in manifest");
+
+    const response = await fetch(this.vkUrl);
+    if (!response.ok) throw new Error(`manifest error: cannot fetch vk (HTTP ${response.status})`);
+    const rawBytes = await response.arrayBuffer();
+
+    // Verify hash+size of RAW bytes (matching staging script)
+    const hashBytes = await crypto.subtle.digest("SHA-256", rawBytes);
+    const actualHash = bytesToHexLower(new Uint8Array(hashBytes));
+    if (actualHash !== asset.sha256) {
+      throw new Error(`manifest error: vk SHA-256 mismatch — expected ${asset.sha256}, got ${actualHash}`);
+    }
+    if (rawBytes.byteLength !== asset.size) {
+      throw new Error(`manifest error: vk size mismatch — expected ${asset.size}, got ${rawBytes.byteLength}`);
+    }
+
+    // Now parse JSON from raw bytes
+    const text = new TextDecoder().decode(rawBytes);
+    this.vkJson = JSON.parse(text) as object;
+    return this.vkJson;
+  }
+
+  private async verifyAssetHash(url: string, kind: string, manifest: AssetManifest): Promise<void> {
     const asset = manifest.assets.find((a) => a.kind === kind);
     if (!asset) throw new Error(`manifest error: no ${kind} asset in manifest`);
-
-    if (isJson) {
-      // For VK, we compare against the JSON we already have.
-      // Compute SHA-256 of the canonical JSON.
-      const vkJson = this.vkJson;
-      const jsonBytes = new TextEncoder().encode(JSON.stringify(vkJson));
-      const hashBytes = await crypto.subtle.digest("SHA-256", jsonBytes.buffer as ArrayBuffer);
-      const actualHash = bytesToHexLower(new Uint8Array(hashBytes));
-      if (actualHash !== asset.sha256) {
-        throw new Error(`manifest error: ${kind} SHA-256 mismatch — expected ${asset.sha256}, got ${actualHash}`);
-      }
-      if (jsonBytes.length !== asset.size) {
-        throw new Error(`manifest error: ${kind} size mismatch — expected ${asset.size}, got ${jsonBytes.length}`);
-      }
-      return;
-    }
 
     const response = await fetch(url);
     if (!response.ok) throw new Error(`manifest error: cannot fetch ${kind} asset (HTTP ${response.status})`);
