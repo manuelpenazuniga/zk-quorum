@@ -81,7 +81,7 @@ function validateManifest(manifest) {
         if (!Array.isArray(manifest[k])) fail(`manifest.${k} must be array, got ${typeof manifest[k]}`);
     }
 
-    // Validate public_signals: exactly 6 decimal strings
+    // Validate public_signals: exactly 6 canonical Fr decimal strings
     if (Array.isArray(manifest.public_signals)) {
         if (manifest.public_signals.length !== 6) {
             fail(`manifest.public_signals must have 6 elements, got ${manifest.public_signals.length}`);
@@ -89,9 +89,17 @@ function validateManifest(manifest) {
         for (let i = 0; i < manifest.public_signals.length; i++) {
             if (typeof manifest.public_signals[i] !== 'string') {
                 fail(`manifest.public_signals[${i}] must be string`);
+            } else {
+                try { frDecimalToHex32(manifest.public_signals[i]); } catch (e) {
+                    fail(`manifest.public_signals[${i}] not canonical Fr: ${e.message}`);
+                }
             }
         }
     }
+
+    // Exact value checks
+    if (manifest.depth !== 10) fail(`manifest.depth must be 10, got ${manifest.depth}`);
+    if (manifest.max_options !== 16) fail(`manifest.max_options must be 16, got ${manifest.max_options}`);
 
     // Validate artifacts exact list
     const expectedArtifacts = ['proof.json', 'public.json', 'vk.bin', 'proof.bin', 'public.bin', 'contract-observation.json'];
@@ -116,6 +124,8 @@ const OBS_REQUIRED_BOOL = ['event_matches_expected', 'duplicate_no_state_mutatio
     'mutated_no_state_mutation', 'mutated_no_new_events'];
 const OBS_OBJECTS = ['tally', 'result'];
 
+function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+
 function validateObservation(obs) {
     const allKnown = new Set([...OBS_REQUIRED_STR, ...OBS_REQUIRED_NUM, ...OBS_REQUIRED_BOOL, ...OBS_OBJECTS]);
     for (const k of Object.keys(obs)) {
@@ -133,8 +143,29 @@ function validateObservation(obs) {
         if (!(k in obs)) { fail(`Missing observation key: ${k}`); continue; }
         if (typeof obs[k] !== 'boolean') fail(`observation.${k} must be boolean, got ${typeof obs[k]}`);
     }
-    for (const k of OBS_OBJECTS) {
-        if (!(k in obs)) { fail(`Missing observation key: ${k}`); }
+    // result: must be plain object { tally: [...] }
+    if (!isPlainObject(obs.result)) fail('observation.result must be a plain object');
+    else {
+        const rKeys = Object.keys(obs.result);
+        if (rKeys.length !== 1 || rKeys[0] !== 'tally') fail('observation.result must have exactly key "tally"');
+        if (!Array.isArray(obs.result.tally)) fail('observation.result.tally must be an array');
+        else {
+            for (let i = 0; i < obs.result.tally.length; i++) {
+                if (typeof obs.result.tally[i] !== 'number' || !Number.isInteger(obs.result.tally[i]) || obs.result.tally[i] < 0)
+                    fail(`observation.result.tally[${i}] must be non-negative integer, got ${obs.result.tally[i]}`);
+            }
+        }
+    }
+    // tally: must be plain object { String(vote): integer 1 }
+    if (!isPlainObject(obs.tally)) fail('observation.tally must be a plain object');
+    else {
+        const tKeys = Object.keys(obs.tally);
+        if (tKeys.length !== 1) fail(`observation.tally must have exactly 1 key, got ${tKeys.length}`);
+        else {
+            const voteKey = String(obs.vote);
+            if (tKeys[0] !== voteKey) fail(`observation.tally key must be "${voteKey}", got "${tKeys[0]}"`);
+            if (obs.tally[voteKey] !== 1) fail(`observation.tally["${voteKey}"] must be 1, got ${obs.tally[voteKey]}`);
+        }
     }
     if (obs.schema !== 'contract-observation-v1') fail(`observation.schema must be contract-observation-v1`);
 }
@@ -242,6 +273,45 @@ function selfTest(evidenceDir) {
         fs.writeFileSync(path.join(d, 'manifest.json'), JSON.stringify(m));
     });
 
+    // Case 12: result is string (not object)
+    expectFail('obs-result-string', (d) => {
+        const o = JSON.parse(fs.readFileSync(path.join(d, 'contract-observation.json'), 'utf8'));
+        o.result = 'not-an-object';
+        fs.writeFileSync(path.join(d, 'contract-observation.json'), JSON.stringify(o));
+    });
+
+    // Case 13: tally is null
+    expectFail('obs-tally-null', (d) => {
+        const o = JSON.parse(fs.readFileSync(path.join(d, 'contract-observation.json'), 'utf8'));
+        o.tally = null;
+        fs.writeFileSync(path.join(d, 'contract-observation.json'), JSON.stringify(o));
+    });
+
+    // Case 14: nested unknown key in observation
+    expectFail('obs-nested-unknown-key', (d) => {
+        const o = JSON.parse(fs.readFileSync(path.join(d, 'contract-observation.json'), 'utf8'));
+        o.result.extra_nested = true;
+        fs.writeFileSync(path.join(d, 'contract-observation.json'), JSON.stringify(o));
+    });
+
+    // Case 15: manifest depth incorrect
+    expectFail('manifest-depth-wrong', (d) => {
+        const m = JSON.parse(fs.readFileSync(path.join(d, 'manifest.json'), 'utf8'));
+        m.depth = 20;
+        fs.writeFileSync(path.join(d, 'manifest.json'), JSON.stringify(m));
+    });
+
+    // Case 16: vote non-canonical (leading zeros)
+    expectFail('public-vote-noncanonical', (d) => {
+        const pub = JSON.parse(fs.readFileSync(path.join(d, 'public.json'), 'utf8'));
+        pub[1] = '00'; // leading zeros
+        fs.writeFileSync(path.join(d, 'public.json'), JSON.stringify(pub));
+        // Also update manifest to match (deep-equal still fails, but the non-canonical Fr catches it)
+        const m = JSON.parse(fs.readFileSync(path.join(d, 'manifest.json'), 'utf8'));
+        m.public_signals[1] = '00';
+        fs.writeFileSync(path.join(d, 'manifest.json'), JSON.stringify(m));
+    });
+
     // Cleanup
     fs.rmSync(tmpBase, { recursive: true, force: true });
     console.log('');
@@ -288,7 +358,7 @@ try {
     observation = JSON.parse(fs.readFileSync(path.join(evidenceDir, 'contract-observation.json'), 'utf8'));
 } catch (e) { fail(`Cannot parse contract-observation.json: ${e.message}`); process.exit(1); }
 validateObservation(observation);
-if (failed > 0) process.exit(1);
+if (failed > 0) { console.error('\nSchema validation failed. Aborting.'); process.exit(1); }
 ok('Observation schema valid');
 ok('Manifest schema valid');
 
@@ -334,6 +404,18 @@ if (!Array.isArray(pubData) || pubData.length !== 6) {
 
     const [nullifierDec, voteDec, optionCountDec, stateRootDec, assocRootDec, scopeDec] = pubData.map(String);
 
+    // All 6 signals must be canonical Fr — convert to hex32 (throws on failure)
+    try {
+        frDecimalToHex32(nullifierDec);
+        frDecimalToHex32(voteDec);
+        frDecimalToHex32(optionCountDec);
+        frDecimalToHex32(stateRootDec);
+        frDecimalToHex32(assocRootDec);
+        frDecimalToHex32(scopeDec);
+    } catch (e) {
+        fail(`Public signal not canonical Fr: ${e.message}`);
+    }
+
     // Convert each Fr decimal to canonical hex32 and compare with observation
     try {
         const nhHex = frDecimalToHex32(nullifierDec);
@@ -355,11 +437,15 @@ if (!Array.isArray(pubData) || pubData.length !== 6) {
         fail(`Fr decimal→hex32 conversion error: ${e.message}`);
     }
 
-    // Vote and option_count exact match
-    const voteVal = parseInt(voteDec, 10);
-    const optVal = parseInt(optionCountDec, 10);
-    if (isNaN(voteVal)) fail(`vote is not a valid number: ${voteDec}`);
-    if (isNaN(optVal)) fail(`optionCount is not a valid number: ${optionCountDec}`);
+    // Vote and option_count: BigInt → safe integer → Number
+    const voteBi = BigInt(voteDec);
+    const optBi = BigInt(optionCountDec);
+    if (voteBi > BigInt(Number.MAX_SAFE_INTEGER)) fail(`vote exceeds safe integer: ${voteDec}`);
+    if (optBi > BigInt(Number.MAX_SAFE_INTEGER)) fail(`optionCount exceeds safe integer: ${optionCountDec}`);
+    const voteVal = Number(voteBi);
+    const optVal = Number(optBi);
+    if (!Number.isSafeInteger(voteVal)) fail(`vote not safe integer: ${voteDec}`);
+    if (!Number.isSafeInteger(optVal)) fail(`optionCount not safe integer: ${optionCountDec}`);
     if (voteVal !== observation.vote) fail(`vote mismatch: signal=${voteVal}, observation=${observation.vote}`);
     else ok('vote matches');
     if (optVal !== observation.option_count) fail(`option_count mismatch: signal=${optVal}, observation=${observation.option_count}`);
@@ -368,8 +454,8 @@ if (!Array.isArray(pubData) || pubData.length !== 6) {
     if (optVal < 1 || optVal > 16) fail(`option_count out of range: ${optVal}`);
 }
 
-// 6. result.tally validation
-if (observation.result && Array.isArray(observation.result.tally)) {
+// 6. result.tally validation (guaranteed valid structure from validateObservation)
+{
     const tally = observation.result.tally;
     const optCount = observation.option_count;
     if (tally.length !== optCount) {
@@ -378,7 +464,10 @@ if (observation.result && Array.isArray(observation.result.tally)) {
         let sum = 0;
         let voteOk = true;
         for (let i = 0; i < tally.length; i++) {
-            if (typeof tally[i] !== 'number') { fail(`result.tally[${i}] is not a number`); voteOk = false; continue; }
+            if (typeof tally[i] !== 'number' || !Number.isInteger(tally[i]) || tally[i] < 0) {
+                fail(`result.tally[${i}] must be non-negative integer, got ${tally[i]}`);
+                voteOk = false; continue;
+            }
             sum += tally[i];
             if (i === observation.vote) {
                 if (tally[i] !== 1) { fail(`result.tally[vote=${i}] must be 1, got ${tally[i]}`); voteOk = false; }
@@ -389,12 +478,8 @@ if (observation.result && Array.isArray(observation.result.tally)) {
         if (sum !== 1) fail(`result.tally sum must be 1, got ${sum}`);
         else if (voteOk) ok('result.tally array valid');
     }
-    // tally map must match
-    if (observation.tally && typeof observation.tally === 'object') {
-        const voteKey = String(observation.vote);
-        if (observation.tally[voteKey] !== 1) fail(`tally map key ${voteKey} must be 1`);
-        else ok('tally map consistent');
-    }
+    // tally map consistency (guaranteed valid structure from validateObservation)
+    ok('tally map consistent');
 }
 
 // 7. Flag assertions
