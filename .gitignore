@@ -83,6 +83,7 @@ Thumbs.db
 # ── Logs and temp ─────────────────────────────────────────────────────────
 *.log
 logs/
+.agent-runs/
 tmp/
 temp/
 .tmp/

@@ -79,9 +79,9 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
   pasan. U-Pre con prover real en navegador sigue pendiente.
 - C1 `3dd2304` fue auditado por Gemini 3.1 Pro High sin findings e integrado
   como `7a681f0` + `6daf7a5`. En `main` pasan 78/78, clippy y WASM.
-- `agent/crypto` termina en `0a71316`; C0 fue rechazado con 1 Critical, 3 High,
-  1 Medium y 1 Low. Los ptau/zkey autoritativos deben publicarse como assets
-  inmutables con URL y SHA-256. La autenticación GitHub observada era inválida.
+- C0 fue remediado, auditado e integrado hasta `03d95ab`. El release
+  `c0-setup-v1` existe con los tres assets y hashes correctos, pero el repo es
+  privado y la URL default devuelve 404 a clientes anónimos.
 - E0, testnet, carga, A0 y evidencia final siguen pendientes.
 - `spike/package.json`, su lockfile y otros untracked ajenos deben preservarse.
 
@@ -89,9 +89,10 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 
 Continuar secuencialmente con worktrees existentes y routing vigente:
 
-1. restablecer publicación de assets C0 y remediar `0a71316`;
-2. integrar C0 y ejecutar E0 local;
-3. cerrar U-Pre, testnet, R1, carga, A0 y submission.
+1. decidir si el repo se hace público o el fetch C0 exige autenticación;
+2. repetir C0 desde clon limpio por la URL default;
+3. ejecutar E0 local;
+4. cerrar U-Pre, testnet, R1, carga, A0 y submission.
 
 Detalles y acceptance tests:
 `docs/plan/OPEN-CODE-EXECUTION-LOG.md`.

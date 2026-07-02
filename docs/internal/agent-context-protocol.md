@@ -59,9 +59,11 @@ repositorio por defecto.
 
 ## 4. Evidencia y límite de consola
 
-Los logs completos se conservan fuera del chat en
-`/tmp/zkq-agent-runs/<TASK_ID>/`. Sólo la evidencia final que forme parte del
-release se copia posteriormente a una ruta versionada.
+Los logs completos se conservan fuera del chat. Ruta preferida:
+`/tmp/zkq-agent-runs/<TASK_ID>/`. Si el runner no tiene permiso sobre `/tmp`,
+usa `.agent-runs/<TASK_ID>/` dentro del worktree; esa ruta está ignorada. Sólo
+la evidencia final que forme parte del release se copia posteriormente a una
+ruta versionada.
 
 La salida visible de una sesión debe ser menor a 800 tokens y usar:
 
@@ -113,12 +115,10 @@ GLM-5.2 y variantes Low siguen prohibidos.
 
 ## 6. Secuencia y checkpoints
 
-La ruta crítica vigente es:
+La ruta crítica vigente después del cierre de C1 es:
 
 ```text
-C0 reproducible
-→ audit/integración C1
-→ integración C0
+C0 release accesible desde clon limpio
 → E0 local
 → U-Pre
 → T0/R1

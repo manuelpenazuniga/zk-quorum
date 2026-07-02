@@ -1600,3 +1600,58 @@ All gates: PASS
 
 C1 queda `APROBADO E INTEGRADO`. La ruta crítica vuelve a C0: publicación
 inmutable de ptau/zkey, remediación de los findings y nueva auditoría primaria.
+
+### 21.2 C0 remediado, auditado e integrado; bloqueo de visibilidad
+
+DeepSeek V4 Pro produjo la cadena final:
+
+```text
+10dad10 asset fetch, nullifierSecret != 0 y hardening inicial
+07fd658 fuente persistente separada y VK desde manifests
+6103f8e clasificación fail-closed y regresiones
+7678602 resolver de Circom para bootstrap/override
+56fd925 corrección de SyntaxError detectado por Codex
+```
+
+Codex rechazó dos resultados intermedios antes del gate:
+
+1. `10dad10` no preservaba los assets después del clean;
+2. `7678602` introdujo dos `const ROOT` duplicados y declaró tests verdes sin
+   haberlos ejecutado después del cambio.
+
+El estado final pasó:
+
+```text
+gate C0: 72/72
+witness: 28/28
+manifests: 33/33
+Python: 5/5
+Rust: 18/18
+clippy/wasm: PASS
+```
+
+Gemini 3.1 Pro High reprodujo el gate y verificó la relación
+asset → zkey → VK → manifest. Veredicto explícito: `PASA`, sin blockers.
+
+Assets auditados:
+
+```text
+pot14_final.ptau  28315678  25f790d3e910135f71985f198b67ca10c7365b334f631e1d5a0c3a02d1c6c71f
+r0_final.zkey      9013530  519cc5cb6f34227da36c0a11b75e7b684a3f2e85109b36e8485ea5adbd8330d1
+r1_final.zkey      9655858  7ce3539ef7a2a160386e961edfd316e3c8b2f155957e1b46ff19e015eac5a8fb
+```
+
+La cadena funcional se integró hasta `03d95ab`, se repitió con fuente externa
+local y se publicó en `origin/main`. El release se creó en:
+
+```text
+https://github.com/manuelpenazuniga/zk-quorum/releases/tag/c0-setup-v1
+```
+
+`gh release view` confirma los tres assets y tamaños. Sin embargo,
+`gh repo view` confirma `visibility=PRIVATE`; el fetch default mediante `curl`
+anónimo recibe HTTP 404. C0 queda `INTEGRADO, NO CERRADO` hasta elegir:
+
+1. hacer público el repositorio/release; o
+2. implementar fetch autenticado y aceptar que un clon sin credenciales no es
+   reproducible.

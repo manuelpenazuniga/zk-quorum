@@ -75,9 +75,10 @@ reveal, pero no coercion resistance y puede tener non-reveals.
   El gate completo aún requiere U-Pre con prover real en navegador.
 - C1 `3dd2304` fue auditado por Gemini 3.1 Pro High con cero findings e
   integrado como `7a681f0` + `6daf7a5`. El gate verifier-first pasa en `main`.
-- `agent/crypto` termina en `0a71316`, pero C0 fue rechazado: faltan assets
-  ptau/zkey inmutables recuperables por URL + SHA-256 y hay tres High
-  adicionales. No es integrable.
+- C0 fue remediado, auditado e integrado hasta `03d95ab`; el release
+  `c0-setup-v1` contiene los tres assets con tamaños/hashes correctos. El repo
+  es privado y la URL default devuelve 404 a `curl` anónimo, por lo que C0 no
+  queda cerrado hasta decidir visibilidad pública o fetch autenticado.
 - No se han ejecutado E0, testnet, carga ni A0.
 - Los untracked `spike/package.json` y `spike/package-lock.json` son ajenos y
   deben preservarse.
@@ -105,6 +106,5 @@ Aplicar `docs/internal/agent-context-protocol.md`: commits estabilizados antes
 de auditar, un auditor por commit, salida visible menor a 800 tokens, logs
 completos fuera del chat, audits incrementales y audit integral en A0.
 
-P1, foundation y C1 están cerrados. C0 está bloqueado; U0 está integrado pero
-U-Pre pendiente. Antes de integrar una lane deben estar verdes sus tests y las
-auditorías vigentes sin Critical/High.
+P1, foundation y C1 están cerrados. C0 está integrado pero bloqueado por acceso
+al release privado; U0 está integrado pero U-Pre pendiente.

@@ -1,6 +1,7 @@
 # ZK-Quorum — Plan maestro de arquitectura, implementación y auditoría multiagente
 
-**Estado:** plan auditado y congelado; ejecución multiagente en curso, sin lanes integradas todavía
+**Estado:** plan auditado y congelado; F0, U0-code y C1 integrados; C0
+auditado/integrado con release creado, pendiente acceso desde clon anónimo
 **Fecha de congelamiento inicial:** 2026-06-29
 **Deadline informado y corregido explícitamente por el usuario:** 2026-07-02; hora exacta externa pendiente de registrar
 **Freeze interno:** 2026-07-01 20:00 America/Santiago; después solo se aceptan fixes bloqueantes y material de entrega
@@ -929,8 +930,9 @@ con task, worktree absoluto, commit base, ownership, cláusulas aplicables,
 acceptance criteria y comandos. No recibe por defecto todos los documentos
 históricos.
 
-Cada sesión guarda logs completos en `/tmp/zkq-agent-runs/<TASK_ID>/` y termina
-con una salida visible menor a 800 tokens:
+Cada sesión guarda logs completos en `/tmp/zkq-agent-runs/<TASK_ID>/` o, si el
+runner no tiene permiso externo, en `.agent-runs/<TASK_ID>/` ignorado dentro
+del worktree. Termina con una salida visible menor a 800 tokens:
 
 ```text
 STATUS: done | partial | blocked
