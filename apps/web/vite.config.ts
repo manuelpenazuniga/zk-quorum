@@ -1,8 +1,14 @@
 import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   root: ".",
   publicDir: "public",
+  resolve: {
+    alias: {
+      "@zk-quorum/protocol": fileURLToPath(new URL("../../packages/protocol/src/index.ts", import.meta.url)),
+    },
+  },
   build: {
     outDir: "dist",
     target: "es2022",
@@ -12,6 +18,7 @@ export default defineConfig({
         voter: "voter.html",
         admin: "admin.html",
         audit: "audit.html",
+        harness: "harness.html",
       },
     },
   },

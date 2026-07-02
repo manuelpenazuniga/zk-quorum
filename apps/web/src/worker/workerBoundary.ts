@@ -6,34 +6,95 @@ export interface ProverClient {
   terminate(): void;
 }
 
-interface WorkerInbound {
-  readonly type: "progress" | "result";
-  readonly payload: ProvingProgress | ProvingResponse;
+// ── Worker message types ──
+
+interface JobRequest {
+  readonly type: "job";
+  readonly jobId: number;
+  readonly payload: ProvingRequest;
 }
 
-export function createWorkerProverClient(): ProverClient {
+interface ProgressMessage {
+  readonly type: "progress";
+  readonly jobId: number;
+  readonly payload: ProvingProgress;
+}
+
+interface ResultMessage {
+  readonly type: "result";
+  readonly jobId: number;
+  readonly payload: ProvingResponse;
+}
+
+type InboundMessage = ProgressMessage | ResultMessage;
+
+// ── Allowlisted error codes (no secrets, no stack traces, no raw witness) ──
+
+const ALLOWLISTED_ERROR_CODES = new Set([
+  "cancelled",
+  "terminated",
+  "stale job",
+  "worker already busy",
+]);
+
+function isAllowlistedError(msg: string): boolean {
+  return ALLOWLISTED_ERROR_CODES.has(msg) || msg.startsWith("prover error: ") || msg.startsWith("manifest error: ") || msg.startsWith("encoding error: ") || msg.startsWith("verify error: ") || msg.startsWith("invalid request: ");
+}
+
+function sanitizeBoundaryError(e: unknown): string {
+  if (e instanceof DOMException && e.name === "AbortError") return "cancelled";
+  const msg = e instanceof Error ? e.message : String(e ?? "unknown");
+  if (isAllowlistedError(msg)) return msg;
+  return "prover error: internal";
+}
+
+// ── Factory ──
+
+export function createWorkerProverClient(workerUrl?: string): ProverClient {
   let worker: Worker | null = null;
-  let inflight: { resolve: (r: ProvingResponse) => void; reject: (e: Error) => void; onProgress: (p: ProvingProgress) => void } | null = null;
+  let jobIdCounter = 0;
+  let currentJobId: number | null = null;
+  let inflight: {
+    resolve: (r: ProvingResponse) => void;
+    reject: (e: Error) => void;
+    onProgress: (p: ProvingProgress) => void;
+  } | null = null;
+  let terminated = false;
 
   const ensureWorker = (): Worker => {
+    if (terminated) throw new Error("terminated");
     if (worker !== null) return worker;
-    worker = new Worker(new URL("../worker/proverWorker.ts", import.meta.url), { type: "module" });
-    worker.addEventListener("message", (ev: MessageEvent<WorkerInbound>) => {
-      if (inflight === null) return;
+    const url = workerUrl ?? new URL("../worker/proverWorker.ts", import.meta.url);
+    worker = new Worker(url, { type: "module" });
+    worker.addEventListener("message", (ev: MessageEvent<InboundMessage>) => {
       const msg = ev.data;
+      // Reject stale messages (job IDs don't match)
+      if (inflight === null) return;
+      if (msg.jobId !== currentJobId) return;
+
       if (msg.type === "progress") {
         inflight.onProgress(msg.payload as ProvingProgress);
         return;
       }
       if (msg.type === "result") {
-        inflight.resolve(msg.payload as ProvingResponse);
+        // Sanitize error reasons in response
+        const rawPayload = msg.payload as ProvingResponse;
+        let safePayload = rawPayload;
+        if (!rawPayload.ok && typeof rawPayload.reason === "string") {
+          if (!isAllowlistedError(rawPayload.reason)) {
+            safePayload = { ok: false, reason: "prover error: internal" } as ProvingResponse;
+          }
+        }
+        inflight.resolve(safePayload);
         inflight = null;
+        currentJobId = null;
       }
     });
     worker.addEventListener("error", (e: ErrorEvent) => {
       if (inflight !== null) {
-        inflight.reject(new Error(e.message || "worker error"));
+        inflight.reject(new Error(sanitizeBoundaryError(e.error ?? e.message ?? "worker error")));
         inflight = null;
+        currentJobId = null;
       }
     });
     return worker;
@@ -41,23 +102,78 @@ export function createWorkerProverClient(): ProverClient {
 
   return {
     prove(req, onProgress) {
+      if (terminated) return Promise.reject(new Error("terminated"));
+      if (inflight !== null) {
+        return Promise.reject(new Error("worker already busy"));
+      }
+
       const w = ensureWorker();
+      const jobId = ++jobIdCounter;
+      currentJobId = jobId;
+
       return new Promise<ProvingResponse>((resolve, reject) => {
-        inflight = { resolve, reject, onProgress };
-        w.postMessage(req);
+        inflight = {
+          resolve: (r: ProvingResponse) => {
+            // Additional sanitization on success path
+            if (r.ok && r.envelope && r.envelope.publicSignals) {
+              // Ensure public signals are never mutated after return
+              r = {
+                ok: true,
+                envelope: {
+                  electionId: r.envelope.electionId,
+                  publicSchemaId: r.envelope.publicSchemaId,
+                  publicSignals: [...r.envelope.publicSignals],
+                  proofBytes: r.envelope.proofBytes,
+                },
+                publicSignalsHash: r.publicSignalsHash,
+                proofHash: r.proofHash,
+              };
+            }
+            resolve(r);
+          },
+          reject: (e: Error) => {
+            reject(new Error(sanitizeBoundaryError(e)));
+          },
+          onProgress,
+        };
+        const jobMsg: JobRequest = { type: "job", jobId, payload: req };
+        w.postMessage(jobMsg);
       });
     },
+
     cancel() {
       if (worker === null) return;
-      worker.postMessage({ type: "cancel" });
-    },
-    terminate() {
-      worker?.terminate();
+      // Terminate worker to stop any in-flight fullProve (WASM blocks event loop)
+      worker.terminate();
       worker = null;
+      // Resolve the pending job as cancelled
+      if (inflight !== null) {
+        const r: ProvingResponse = { ok: false, reason: "cancelled" };
+        inflight.resolve(r);
+        inflight = null;
+        currentJobId = null;
+      }
+    },
+
+    terminate() {
+      if (worker !== null) {
+        worker.terminate();
+        worker = null;
+      }
+      terminated = true;
+      if (inflight !== null) {
+        inflight.reject(new Error("terminated"));
+        inflight = null;
+        currentJobId = null;
+      }
     },
   };
 }
 
+/**
+ * Inline prover client for tests — wraps any ProvingAdapter-compatible
+ * object and dispatches directly (no worker).
+ */
 export class InlineProverClient implements ProverClient {
   private adapter: import("../adapters/provingAdapter.js").ProvingAdapter;
   constructor(adapter: import("../adapters/provingAdapter.js").ProvingAdapter) {

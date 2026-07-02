@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .vite/
+# U-Pre staging assets — generated, never versioned
+public/upre-assets/

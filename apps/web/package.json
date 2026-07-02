@@ -14,7 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@zk-quorum/protocol": "file:../../packages/protocol"
+    "@zk-quorum/protocol": "file:../../packages/protocol",
+    "snarkjs": "0.7.6"
   },
   "devDependencies": {
     "@stellar/stellar-sdk": "16.0.1",
