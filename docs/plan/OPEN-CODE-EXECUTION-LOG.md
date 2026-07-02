@@ -1682,3 +1682,76 @@ All C0 gate checks passed.
 
 C0 queda `APROBADO, INTEGRADO Y REPRODUCIBLE DESDE CLON ANÓNIMO`. El siguiente
 gate de la ruta crítica es E0 local.
+
+### 21.4 E0 R0 real auditado e integrado
+
+DeepSeek V4 Pro, mediante `opencode-go` y el agente directo sin subagentes,
+implementó y remedió E0 en la rama `agent/integration-e0`. Kimi K2.7 Code no
+se utilizó. Cadena estabilizada:
+
+```text
+389e941 proof R0 real, conversión y Soroban Env E2E
+438f6e6 conversor Rust/arkworks, replay y observación
+ac800a6 evento XDR exacto, proof C=A y nullifier fresco
+3365f92 replay ligado a hashes/VK/señales/tally y 11 corrupciones
+15ad325 schemas anidados fail-closed, depth 10 y 16 corrupciones
+```
+
+Codex rechazó antes del audit dos garantías incompletas:
+
+1. el primer replay calculaba hashes pero no exigía todas sus relaciones y
+   confiaba implícitamente en roots/flags/tally;
+2. una remediación permitía saltar `result/tally` con tipos incorrectos. Al
+   endurecerla se corrigió además una instrucción transitoria errónea
+   `depth=20`; el valor congelado y finalmente validado es
+   `PublicVoteR0(10)`.
+
+El runner limpio en el worktree pasó:
+
+```text
+proof Groth16 BLS12-381: PASS
+snarkjs verify: PASS
+converter arkworks: PASS
+verifier-first: PASS
+Soroban E2E: 2/2
+replay: 25/25
+negative replay self-tests: 16/16
+clippy -D warnings: PASS
+```
+
+Gemini 3.1 Pro High auditó read-only `389e941..15ad325`:
+
+```text
+Critical: 0
+High:     0
+Medium:   0
+Low:      2
+VEREDICTO: PASA
+```
+
+Los Low no bloqueantes quedan registrados para hardening: añadir un vector
+unitario G2 fuera de subgrupo al conversor y convertir el chequeo de
+`#[ignore]` de `build-verifier-first.sh` en una aserción fail-closed.
+
+Integración mecánica en `main`:
+
+```text
+412ff4c e6fbccd a8c05a7 f212827 aac128b
+```
+
+El gate se repitió completo en `main` después del cherry-pick:
+
+```text
+crates/zk:             14/14
+groth16-verifier:       6/6
+zk-quorum:             60/60
+E2E real:               2/2
+replay:                25/25
+VK SHA-256:     c6a9d1c18b79d4d0af62d157557af9cc247e57e827a69df36cf1e86b3d4b7a33
+public SHA-256: 107b4451da4eeb71b7e90f9989f9f925550a77caba70be2614cf49f8cf1c82de
+```
+
+El hash de `proof.bin` cambia entre ejecuciones por la aleatoriedad de
+Groth16; el manifiesto y la observación lo fijan y comparan dentro de cada
+evidencia. E0 queda `APROBADO E INTEGRADO`. El siguiente gate de la ruta
+crítica es U-Pre con prover real en navegador.

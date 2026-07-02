@@ -1170,6 +1170,14 @@ credential
 → audit replay
 ```
 
+Estado al 2026-07-02: `CERRADO`. La implementación integrada en `main`
+genera una prueba R0 real con la zkey final C0, la convierte con validación
+arkworks, invoca el verifier WASM y el contrato Soroban, y verifica evento,
+tally, duplicado y proof mutada. El replay es fail-closed y tiene 16 casos de
+corrupción. Auditoría Gemini 3.1 Pro High: 0 Critical/High, `PASA`. El replay
+standalone prueba consistencia interna y validez matemática; no autentica por
+sí solo una observación de red, responsabilidad de los gates testnet/A0.
+
 ### Gate T0 — Testnet R0
 
 - verificar contrato heredado o redesplegar;

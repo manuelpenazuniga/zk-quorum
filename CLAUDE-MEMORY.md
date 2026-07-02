@@ -72,7 +72,7 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 
 ## Estado actualizado 2026-07-01
 
-- `main` contiene plan, foundation, producto U0 y contrato C1.
+- `main` contiene plan, foundation, C0/C1, producto U0-code y E0.
 - Toolchain fijado: Node 24, Rust/Cargo 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y target `wasm32v1-none`.
 - Producto U0 fue auditado por Gemini 3.1 Pro High e integrado; 236 tests
@@ -82,16 +82,18 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 - C0 fue remediado, auditado e integrado. El repositorio y release
   `c0-setup-v1` son públicos; un clon anónimo descargó los assets por las URLs
   default y pasó el gate completo.
-- E0, testnet, carga, A0 y evidencia final siguen pendientes.
+- E0 R0 fue auditado por Gemini 3.1 Pro High e integrado. En `main` pasan el
+  runner E2E real, replay 25/25 y 16 corrupciones negativas; 0 Critical/High.
+- U-Pre, testnet, carga, A0 y evidencia final siguen pendientes.
 - `spike/package.json`, su lockfile y otros untracked ajenos deben preservarse.
 
 ## Siguiente gate
 
 Continuar secuencialmente con worktrees existentes y routing vigente:
 
-1. ejecutar E0 local con los circuitos/VKs finales;
-2. cerrar U-Pre;
-3. ejecutar testnet, R1, carga, A0 y submission.
+1. cerrar U-Pre con prover real en navegador;
+2. ejecutar testnet R0;
+3. cerrar R1, carga, A0 y submission.
 
 Detalles y acceptance tests:
 `docs/plan/OPEN-CODE-EXECUTION-LOG.md`.

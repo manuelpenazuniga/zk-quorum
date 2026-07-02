@@ -68,7 +68,7 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 ## Estado real
 
-- `main` contiene plan, foundation, producto U0 y contrato C1.
+- `main` contiene plan, foundation, C0/C1, producto U0-code y E0.
 - Foundation reproducible: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y `wasm32v1-none`.
 - Worktrees aislados: `agent/crypto`, `agent/contract` y `agent/product`.
@@ -79,7 +79,9 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 - C0 fue remediado, auditado e integrado. El repositorio y release
   `c0-setup-v1` son públicos; un clon anónimo pasó el gate completo usando las
   URLs default.
-- No hay E0, testnet, carga ni A0.
+- E0 R0 fue auditado por Gemini 3.1 Pro High e integrado. El runner real y su
+  replay fail-closed pasan en `main`, sin Critical/High.
+- No hay U-Pre, testnet, carga ni A0.
 - `spike/package.json`, su lockfile y cualquier otro untracked ajeno deben
   preservarse y nunca entrar por accidente a commits de las lanes.
 
@@ -106,5 +108,5 @@ completos fuera del chat, audits incrementales y audit integral en A0.
 
 ## Gate actual
 
-P1/foundation/C0/C1 están cerrados; U0-code está integrado pero U-Pre sigue
-pendiente. El siguiente gate es E0 local.
+P1/foundation/C0/C1/E0 están cerrados; U0-code está integrado. El siguiente
+gate es U-Pre con prover real en navegador.
