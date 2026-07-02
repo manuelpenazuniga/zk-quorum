@@ -1655,3 +1655,30 @@ anónimo recibe HTTP 404. C0 queda `INTEGRADO, NO CERRADO` hasta elegir:
 1. hacer público el repositorio/release; o
 2. implementar fetch autenticado y aceptar que un clon sin credenciales no es
    reproducible.
+
+### 21.3 C0 cerrado desde clon público
+
+El usuario autorizó cambiar `manuelpenazuniga/zk-quorum` a público:
+
+```text
+visibility: PUBLIC
+release: https://github.com/manuelpenazuniga/zk-quorum/releases/tag/c0-setup-v1
+anonymous range request: HTTP 206
+```
+
+Se clonó `main` en `/tmp/zkq-c0-clean-20260702`, se ejecutó `npm ci` con Node
+24 y el gate sin `ZKQ_SETUP_BASE_URL`. El fetch descargó los tres assets desde
+las URLs default públicas, verificó tamaño/SHA-256 y el clean build terminó:
+
+```text
+gate C0: 72/72
+witness: 28/28
+manifests: 33/33
+Python: 5/5
+Rust: 18/18
+clippy/wasm: PASS
+All C0 gate checks passed.
+```
+
+C0 queda `APROBADO, INTEGRADO Y REPRODUCIBLE DESDE CLON ANÓNIMO`. El siguiente
+gate de la ruta crítica es E0 local.

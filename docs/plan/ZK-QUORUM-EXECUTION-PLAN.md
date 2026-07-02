@@ -1,7 +1,7 @@
 # ZK-Quorum — Plan maestro de arquitectura, implementación y auditoría multiagente
 
-**Estado:** plan auditado y congelado; F0, U0-code y C1 integrados; C0
-auditado/integrado con release creado, pendiente acceso desde clon anónimo
+**Estado:** plan auditado y congelado; F0, C0, C1 y U0-code integrados; C0
+reproducido desde clon anónimo con release público
 **Fecha de congelamiento inicial:** 2026-06-29
 **Deadline informado y corregido explícitamente por el usuario:** 2026-07-02; hora exacta externa pendiente de registrar
 **Freeze interno:** 2026-07-01 20:00 America/Santiago; después solo se aceptan fixes bloqueantes y material de entrega

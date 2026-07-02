@@ -115,11 +115,10 @@ GLM-5.2 y variantes Low siguen prohibidos.
 
 ## 6. Secuencia y checkpoints
 
-La ruta crítica vigente después del cierre de C1 es:
+La ruta crítica vigente después del cierre de C0/C1 es:
 
 ```text
-C0 release accesible desde clon limpio
-→ E0 local
+E0 local
 → U-Pre
 → T0/R1
 → L0

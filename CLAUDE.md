@@ -76,10 +76,9 @@ reveal, pero no coercion resistance y puede tener non-reveals.
   U-Pre con prover real en navegador sigue pendiente.
 - C1 `3dd2304` fue auditado por Gemini 3.1 Pro High con cero findings e
   integrado como `7a681f0` + `6daf7a5`. El gate verifier-first pasa en `main`.
-- C0 fue remediado, auditado e integrado hasta `03d95ab`; el release
-  `c0-setup-v1` contiene los tres assets con tamaños/hashes correctos. El repo
-  privado devuelve 404 a descargas anónimas, por lo que el gate espera una
-  decisión entre visibilidad pública o fetch autenticado.
+- C0 fue remediado, auditado e integrado. El repositorio y release
+  `c0-setup-v1` son públicos; un clon anónimo pasó el gate completo usando las
+  URLs default.
 - No hay E0, testnet, carga ni A0.
 - `spike/package.json`, su lockfile y cualquier otro untracked ajeno deben
   preservarse y nunca entrar por accidente a commits de las lanes.
@@ -107,5 +106,5 @@ completos fuera del chat, audits incrementales y audit integral en A0.
 
 ## Gate actual
 
-P1/foundation/C1 están cerrados; C0 está integrado pero bloqueado por acceso al
-release privado; U0 está integrado pero U-Pre pendiente.
+P1/foundation/C0/C1 están cerrados; U0-code está integrado pero U-Pre sigue
+pendiente. El siguiente gate es E0 local.
