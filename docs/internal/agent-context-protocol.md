@@ -109,6 +109,11 @@ premium C1/A0/fondos          -> GPT-5.5 high
 Kimi                          -> 0 por defecto
 ```
 
+Los implementadores OpenCode se ejecutan con el agente versionado
+`build-direct`, que deshabilita las herramientas `task`, `todowrite` y `skill`.
+No basta con pedir en el prompt que no delegue: la restricción debe estar
+aplicada por configuración.
+
 GPT-5.5 no recibe un repositorio en evolución: sólo el commit final, los
 hallazgos previos, invariantes críticas y evidencia verde. Qwen 3.7 Max,
 GLM-5.2 y variantes Low siguen prohibidos.

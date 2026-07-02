@@ -284,6 +284,8 @@ completa.
 
 ### 8.1 Controles obligatorios de contexto
 
+- implementación OpenCode mediante `--agent build-direct`; la herramienta
+  `task` está deshabilitada por configuración;
 - salida visible por agente menor a 800 tokens;
 - logs completos en `/tmp/zkq-agent-runs/<TASK_ID>/`;
 - éxito resumido como comando, conteo, hashes y `PASS`;
