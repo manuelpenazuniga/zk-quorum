@@ -90,10 +90,6 @@ temp/
 # ── Release assets — one-shot ceremony output, never versioned ──────────────
 circuits/.release-assets/
 
-tmp/
-temp/
-.tmp/
-
 # ── Coverage / test output ─────────────────────────────────────────────────
 coverage/
 *.lcov

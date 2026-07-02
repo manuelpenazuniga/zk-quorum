@@ -19,9 +19,26 @@ const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const CIRCOM = path.join(ROOT, '.bootstrap', 'bin', 'circom');
+const CIRCOM = resolveCircom(ROOT);
 const SNARKJS = path.join(ROOT, 'node_modules', '.bin', 'snarkjs');
 const REPRO_DIR = path.join(ROOT, 'tmp', 'setup-repro');
+
+function resolveCircom(root) {
+    if (process.env.ZKQ_CIRCOM_BIN) {
+        const candidate = process.env.ZKQ_CIRCOM_BIN;
+        if (!fs.existsSync(candidate) && !fs.existsSync(path.resolve(root, candidate))) {
+            console.error(`ERROR: ZKQ_CIRCOM_BIN=${candidate} not found`);
+            process.exit(1);
+        }
+        return path.resolve(root, candidate);
+    }
+    const canonical = path.join(root, '.bootstrap', 'circom', 'v2.2.3', 'circom');
+    if (fs.existsSync(canonical)) return canonical;
+    const legacy = path.join(root, '.bootstrap', 'bin', 'circom');
+    if (fs.existsSync(legacy)) return legacy;
+    console.error('ERROR: circom 2.2.3 not found. Set ZKQ_CIRCOM_BIN or run bootstrap.');
+    process.exit(1);
+}
 
 function sha256File(fp) {
     const buf = fs.readFileSync(fp);

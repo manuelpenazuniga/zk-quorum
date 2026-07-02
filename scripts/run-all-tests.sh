@@ -32,16 +32,40 @@ if ! node --version 2>/dev/null | grep -q '^v'; then
 fi
 echo "[OK] Node $(node --version)"
 
-if [ ! -x ".bootstrap/bin/circom" ]; then
-    echo "ERROR: .bootstrap/bin/circom not found"
+# ── Circom binary resolver (fail-closed) ───────────────────────────────────
+resolve_circom() {
+    local candidate="${ZKQ_CIRCOM_BIN:-}"
+    if [ -n "${candidate}" ]; then
+        if [ ! -x "${candidate}" ]; then
+            echo "ERROR: ZKQ_CIRCOM_BIN=${candidate} is not executable" >&2
+            exit 1
+        fi
+        echo "${candidate}"
+        return
+    fi
+    # Canonical path from foundation bootstrap
+    candidate=".bootstrap/circom/v2.2.3/circom"
+    if [ -x "${candidate}" ]; then
+        echo "${candidate}"
+        return
+    fi
+    # Legacy compatibility path
+    candidate=".bootstrap/bin/circom"
+    if [ -x "${candidate}" ]; then
+        echo "${candidate}"
+        return
+    fi
+    echo "ERROR: circom 2.2.3 not found. Set ZKQ_CIRCOM_BIN or run bootstrap." >&2
     exit 1
-fi
-CIRCOM_VERSION=$(.bootstrap/bin/circom --version 2>&1 | awk 'NR == 1 { print $3 }')
-if [ "$CIRCOM_VERSION" != "2.2.3" ]; then
+}
+
+CIRCOM=$(resolve_circom)
+CIRCOM_VERSION=$("${CIRCOM}" --version 2>&1 | awk 'NR == 1 { print $3 }')
+if [ "${CIRCOM_VERSION}" != "2.2.3" ]; then
     echo "ERROR: Circom 2.2.3 required, found ${CIRCOM_VERSION:-unknown}"
     exit 1
 fi
-echo "[OK] circom $CIRCOM_VERSION"
+echo "[OK] circom ${CIRCOM_VERSION} (${CIRCOM})"
 
 if [ ! -x "node_modules/.bin/snarkjs" ]; then
     echo "ERROR: snarkjs not installed (run npm install)"
@@ -76,7 +100,6 @@ echo ""
 
 # ── Step 1: Compile circuits ─────────────────────────────────────────────────
 echo "=== Step 1: Compile circuits ==="
-CIRCOM=".bootstrap/bin/circom"
 mkdir -p circuits/build/public-vote circuits/build/commit-vote
 
 echo "  Compiling R0..."

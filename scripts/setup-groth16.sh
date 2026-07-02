@@ -26,7 +26,32 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CIRCOM=".bootstrap/bin/circom"
+# ── Circom binary resolver (fail-closed) ───────────────────────────────────
+resolve_circom() {
+    local candidate="${ZKQ_CIRCOM_BIN:-}"
+    if [ -n "${candidate}" ]; then
+        if [ ! -x "${candidate}" ]; then
+            echo "ERROR: ZKQ_CIRCOM_BIN=${candidate} is not executable" >&2
+            exit 1
+        fi
+        echo "${candidate}"
+        return
+    fi
+    candidate=".bootstrap/circom/v2.2.3/circom"
+    if [ -x "${candidate}" ]; then
+        echo "${candidate}"
+        return
+    fi
+    candidate=".bootstrap/bin/circom"
+    if [ -x "${candidate}" ]; then
+        echo "${candidate}"
+        return
+    fi
+    echo "ERROR: circom 2.2.3 not found" >&2
+    exit 1
+}
+
+CIRCOM=$(resolve_circom)
 SNARKJS="node_modules/.bin/snarkjs"
 SETUP_DIR="tmp/setup"
 POWER=14

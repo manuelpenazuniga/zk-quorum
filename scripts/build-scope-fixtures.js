@@ -11,7 +11,25 @@ const crypto = require('crypto');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const CIRCOM = path.join(ROOT, '.bootstrap', 'bin', 'circom');
+const ROOT = path.resolve(__dirname, '..');
+const CIRCOM = resolveCircom(ROOT);
+
+function resolveCircom(root) {
+    if (process.env.ZKQ_CIRCOM_BIN) {
+        const candidate = process.env.ZKQ_CIRCOM_BIN;
+        if (!fs.existsSync(candidate) && !fs.existsSync(path.resolve(root, candidate))) {
+            console.error(`ERROR: ZKQ_CIRCOM_BIN=${candidate} not found`);
+            process.exit(1);
+        }
+        return path.resolve(root, candidate);
+    }
+    const canonical = path.join(root, '.bootstrap', 'circom', 'v2.2.3', 'circom');
+    if (fs.existsSync(canonical)) return canonical;
+    const legacy = path.join(root, '.bootstrap', 'bin', 'circom');
+    if (fs.existsSync(legacy)) return legacy;
+    console.error('ERROR: circom 2.2.3 not found. Set ZKQ_CIRCOM_BIN or run bootstrap.');
+    process.exit(1);
+}
 const CIRCOM_BUILD = path.join(ROOT, 'circuits', 'build');
 const FIXTURES = path.join(ROOT, 'circuits', 'artifacts', 'fixtures');
 
