@@ -206,10 +206,23 @@ fn e2e_r0_full_flow() {
     );
     assert_eq!(client.get_tally_bucket(&election_id, &vote, &bucket), 1u64);
 
+    // ── Mutated nullifier must NOT be marked used ──
+    let mut mutated_nh_arr = [0u8; 32];
+    mutated_nh_arr.copy_from_slice(&mutated_public[4..36]);
+    let mutated_nh = BytesN::from_array(&env, &mutated_nh_arr);
+    assert!(!client.is_nullifier_used(&election_id, &mutated_nh));
+
     // ── Audit summary ──
     let audit = client.audit_summary(&election_id);
     assert_eq!(audit.option_count, option_count);
     assert_eq!(audit.mode, ElectionMode::R0);
+
+    // ── Build real result tally array from summary ──
+    let mut tally_parts: std::vec::Vec<std::string::String> = std::vec![];
+    for i in 0..option_count {
+        tally_parts.push(std::format!("{}", summary.tally.get(i).unwrap_or(0)));
+    }
+    let tally_json = std::format!("[{}]", tally_parts.join(", "));
 
     // ── Write contract-observation.json ──
     let obs_dir = e0_dir().join("evidence");
@@ -241,7 +254,14 @@ fn e2e_r0_full_flow() {
     s.push_str(&std::format!("  \"option_count\": {},\n", option_count));
     s.push_str(&std::format!("  \"tally_bucket\": {},\n", bucket));
     s.push_str(&std::format!("  \"tally\": {{ \"{}\": 1 }},\n", vote));
-    s.push_str("  \"result\": { \"tally\": [1] },\n");
+    s.push_str(&std::format!(
+        "  \"result\": {{ \"tally\": {} }},\n",
+        tally_json
+    ));
+    s.push_str(&std::format!(
+        "  \"vk_sha256\": \"{}\",\n",
+        hex::encode(vk_hash.to_array())
+    ));
     s.push_str(&std::format!(
         "  \"proof_sha256\": \"{}\",\n",
         hex::encode(expected_proof_hash.to_array())
