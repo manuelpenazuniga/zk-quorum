@@ -477,6 +477,10 @@ echo ""
 info "Phase 10/11: Protocol helpers typecheck"
 
 # Verify the protocol package typechecks successfully
+echo "    Installing protocol dependencies..."
+npm ci --prefix packages/protocol || fail "Protocol dependency install failed"
+ok "Protocol dependencies installed successfully"
+
 echo "    Typechecking protocol package..."
 npm --prefix packages/protocol run typecheck || fail "Protocol typecheck failed"
 ok "Protocol package typechecked successfully"
