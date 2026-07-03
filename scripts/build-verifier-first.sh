@@ -16,6 +16,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Reject external non-empty RUSTFLAGS or CARGO_ENCODED_RUSTFLAGS
+if [ -n "${RUSTFLAGS:-}" ] || [ -n "${CARGO_ENCODED_RUSTFLAGS:-}" ]; then
+  echo "ERROR: External non-empty RUSTFLAGS or CARGO_ENCODED_RUSTFLAGS are not allowed" >&2
+  exit 1
+fi
+
+# Calculate effective CARGO_HOME and RUSTUP_HOME
+EFFECTIVE_CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+EFFECTIVE_RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
+
+# Export compilation flags and path remappings
+export CARGO_INCREMENTAL=0
+export SOURCE_DATE_EPOCH=0
+export RUSTFLAGS="--remap-path-prefix $PROJECT_DIR=/workspace --remap-path-prefix $EFFECTIVE_CARGO_HOME=/cargo --remap-path-prefix $EFFECTIVE_RUSTUP_HOME=/rustup"
+
 ZK_CRATE="$PROJECT_DIR/crates/zk"
 VERIFIER="$PROJECT_DIR/contracts/groth16-verifier"
 ZK_QUORUM="$PROJECT_DIR/contracts/zk-quorum"
@@ -175,8 +190,14 @@ echo ""
 echo "==> Step 5/5: Zero-ignored test confirmation"
 for manifest in "$ZK_CRATE/Cargo.toml" "$VERIFIER/Cargo.toml" "$ZK_QUORUM/Cargo.toml"; do
   dir="$(dirname "$manifest")"
-  ignored=$(cargo test --manifest-path "$manifest" --release -- --list 2>/dev/null || true)
-  echo "    $(basename "$dir")"
+  ignored=$(cargo test --manifest-path "$manifest" --release -- --list --ignored)
+  if printf '%s\n' "$ignored" | grep -q ': test$'; then
+    echo "ERROR: Ignored tests found in $(basename "$dir")" >&2
+    printf '%s\n' "$ignored" | grep ': test$' >&2
+    exit 1
+  else
+    echo "    $(basename "$dir"): 0 ignored"
+  fi
 done
 
 # ── SHA-256 hashes (portable: shasum on macOS, sha256sum elsewhere) ──

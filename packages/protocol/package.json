@@ -18,7 +18,8 @@
     "./ids": "./src/ids.ts",
     "./version": "./src/version.ts",
     "./hash": "./src/hash.ts",
-    "./canonical": "./src/canonical.ts"
+    "./canonical": "./src/canonical.ts",
+    "./t0": "./src/t0.ts"
   },
   "scripts": {
     "test": "vitest run",
