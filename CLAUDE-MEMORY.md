@@ -70,28 +70,29 @@ off-chain, simulación, secuenciado de nonces y logging redactado.
 - Auditoría histórica usa archivo content-addressed, no solo retención RPC.
 - TTL expresado en ledgers y acotado por política/red.
 
-## Estado actualizado 2026-07-01
+## Estado actualizado 2026-07-03
 
-- `main` contiene plan, foundation, C0/C1, producto U0-code y E0.
-- Toolchain fijado: Node 24, Rust/Cargo 1.96, Circom 2.2.3, snarkjs 0.7.6,
-  Stellar CLI 27 y target `wasm32v1-none`.
-- Producto U0-code fue auditado e integrado. U-Pre Chromium cerró con prover
-  real, invalid witness, cancelación y recuperación; audit final sin findings.
-- C1 `3dd2304` fue auditado por Gemini 3.1 Pro High sin findings e integrado
-  como `7a681f0` + `6daf7a5`. En `main` pasan 78/78, clippy y WASM.
-- C0 fue remediado, auditado e integrado. El repositorio y release
-  `c0-setup-v1` son públicos; un clon anónimo descargó los assets por las URLs
-  default y pasó el gate completo.
-- E0 R0 fue auditado por Gemini 3.1 Pro High e integrado. En `main` pasan el
-  runner E2E real, replay 25/25 y 16 corrupciones negativas; 0 Critical/High.
-- Testnet, carga, A0 y evidencia final siguen pendientes.
+- `main` contiene plan, foundation, C0/C1, producto U0-code, E0 y T0 prepare.
+- Toolchain fijado: Node 24, Rust/Cargo 1.96, Circom 2.2.3, snarkjs 0.7.6, Stellar CLI 27
+  y target `wasm32v1-none`.
+- Producto U0-code fue auditado e integrado. U-Pre Chromium cerró con prover real,
+  invalid witness, cancelación y recuperación; audit final sin findings.
+- C1 `3dd2304` fue auditado por Gemini 3.1 Pro High sin findings e integrado como
+  `7a681f0` + `6daf7a5`. En `main` pasan 78/78, clippy y WASM.
+- C0 fue remediado, auditado e integrado. El repositorio y release `c0-setup-v1` son públicos;
+  un clon anónimo descargó los assets por las URLs default y pasó el gate completo.
+- E0 R0 fue auditado por Gemini 3.1 Pro High e integrado. En `main` pasan el runner E2E real,
+  replay 25/25 y 16 corrupciones negativas; 0 Critical/High.
+- T0 prepare está aprobado e integrado (commits d9ffda7 y 05f98d8).
+  T0 execute/testnet está pendiente.
+- Testnet (ejecución), carga, A0 y evidencia final siguen pendientes.
 - `spike/package.json`, su lockfile y otros untracked ajenos deben preservarse.
 
 ## Siguiente gate
 
 Continuar secuencialmente con worktrees existentes y routing vigente:
 
-1. ejecutar T0 testnet R0;
+1. ejecutar T0 execute/testnet;
 2. cerrar R1;
 3. ejecutar carga, A0 y submission.
 

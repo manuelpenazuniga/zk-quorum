@@ -68,7 +68,8 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 ## Estado real
 
-- `main` contiene plan, foundation, C0/C1, producto U0-code y E0.
+- `main` contiene plan, foundation, C0/C1, producto U0-code, E0 y T0
+  `prepare-only`.
 - Toolchain: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6, Stellar CLI 27
   y `wasm32v1-none`.
 - Producto U0-code fue auditado e integrado. U-Pre Chromium cerró con prover
@@ -82,7 +83,11 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 - E0 R0 fue auditado por Gemini 3.1 Pro High e integrado. En `main` pasa la
   cadena proof real → verifier WASM → cast → duplicate/mutated reject → tally
   → replay fail-closed; 0 Critical/High.
-- No se han ejecutado testnet, carga ni A0.
+- T0 `prepare-only` fue auditado e integrado como `d9ffda7` + `05f98d8`; el
+  gate completo pasa en `main`. No se han desplegado contratos ni enviado
+  transacciones T0.
+- T0 execute/testnet, carga y A0 siguen pendientes. El deadline por fecha
+  2026-07-02 ya pasó; la hora externa exacta nunca fue informada.
 - Los untracked `spike/package.json` y `spike/package-lock.json` son ajenos y
   deben preservarse.
 
@@ -109,5 +114,5 @@ Aplicar `docs/internal/agent-context-protocol.md`: commits estabilizados antes
 de auditar, un auditor por commit, salida visible menor a 800 tokens, logs
 completos fuera del chat, audits incrementales y audit integral en A0.
 
-P1, foundation, C0, C1, E0 y U-Pre Chromium están cerrados. U0-code está
-integrado; el siguiente gate es T0 testnet R0.
+P1, foundation, C0, C1, E0 y U-Pre Chromium están cerrados. U0-code y T0
+`prepare-only` están integrados; el siguiente gate es T0 execute/testnet R0.

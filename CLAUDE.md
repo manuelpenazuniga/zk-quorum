@@ -68,7 +68,7 @@ reveal, pero no coercion resistance y puede tener non-reveals.
 
 ## Estado real
 
-- `main` contiene plan, foundation, C0/C1, producto U0-code y E0.
+- `main` contiene plan, foundation, C0/C1, producto U0-code, E0 y T0 prepare.
 - Foundation reproducible: Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6,
   Stellar CLI 27 y `wasm32v1-none`.
 - Worktrees aislados: `agent/crypto`, `agent/contract` y `agent/product`.
@@ -82,7 +82,9 @@ reveal, pero no coercion resistance y puede tener non-reveals.
   URLs default.
 - E0 R0 fue auditado por Gemini 3.1 Pro High e integrado. El runner real y su
   replay fail-closed pasan en `main`, sin Critical/High.
-- No hay testnet, carga ni A0.
+- T0 prepare está aprobado e integrado (commits d9ffda7 y 05f98d8).
+  T0 execute/testnet está pendiente.
+- Carga, A0 y evidencia final siguen pendientes.
 - `spike/package.json`, su lockfile y cualquier otro untracked ajeno deben
   preservarse y nunca entrar por accidente a commits de las lanes.
 
@@ -109,5 +111,5 @@ completos fuera del chat, audits incrementales y audit integral en A0.
 
 ## Gate actual
 
-P1/foundation/C0/C1/E0/U-Pre Chromium están cerrados; U0-code está integrado.
-El siguiente gate es T0 testnet R0.
+P1/foundation/C0/C1/E0/U-Pre Chromium y T0 prepare están integrados.
+El siguiente gate/paso es T0 execute/testnet.

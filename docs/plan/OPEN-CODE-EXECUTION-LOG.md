@@ -1834,3 +1834,84 @@ snarkjs 0.7.6 + bfj 9.1.3 override
 
 U-Pre queda `APROBADO E INTEGRADO PARA CHROMIUM DESKTOP`. No extiende claims a
 Safari, Firefox ni móvil. El siguiente gate de ruta crítica es T0 testnet R0.
+
+### 21.6 T0 prepare-only auditado e integrado
+
+Se completó y auditó la fase de preparación (`prepare-only`) de T0 en la rama principal.
+Kimi no se usó en esta fase.
+
+La cadena de commits integrada en `main` corresponde a:
+
+- `d9ffda7` y `05f98d8`
+
+#### Hechos exactos de la ejecución
+- **Ledger de inicio:** El ledger `3408588` fue observado al inicio de la corrida (no al final).
+- **Balance verificado:** `9999.9999900` test XLM.
+- **Toolchain utilizado:** Node 24, Rust 1.96, Circom 2.2.3, snarkjs 0.7.6, Stellar CLI 27.
+- **C0 hashes verificados (completos):**
+  - `ptau`:
+    `25f790d3e910135f71985f198b67ca10c7365b334f631e1d5a0c3a02d1c6c71f`
+  - `r0`:
+    `519cc5cb6f34227da36c0a11b75e7b684a3f2e85109b36e8485ea5adbd8330d1`
+  - `r1`:
+    `7ce3539ef7a2a160386e961edfd316e3c8b2f155957e1b46ff19e015eac5a8fb`
+- **E0 metrics:**
+  - `crates/zk`: 14/14 passed, 0 ignored
+  - `groth16-verifier`: 6/6 passed, 0 ignored
+  - `zk-quorum`: 60/60 passed, 0 ignored
+  - E2E real: 2/2 passed
+  - Replay: 25/25 passed
+- **WASM verifier hashes (completos):**
+  - `groth16_verifier.wasm` (verifier):
+    `d6f6bb12d2e8f88ab34b076ef8800c8ea53c0e504ea8c85269b6cb6b75fa94ab`
+  - `zk_quorum.wasm` (zk):
+    `b9c6b42bafd7f1fe5b01884593793b804d0a88ed6be01eabab94c34fa0508c30`
+- **Verification Keys (VK) hashes (completos):**
+  - VK R0:
+    `c6a9d1c18b79d4d0af62d157557af9cc247e57e827a69df36cf1e86b3d4b7a33`
+  - VK R1:
+    `b0c382e5f9ddd413cb40156b356a9ad7f98ecfc453fdefd583501a7e793f7ad4`
+- **Controles de calidad y preparación final:**
+  - Ejecución de prepare posterior a `05f98d8` pasó correctamente.
+  - Dependencias: `npm ci` instaló 46 packages, `audit` reportó 47 packages, 0 vulnerabilidades.
+  - Secrets: Evidencia en `tmp/t0` fue escaneada y no se encontraron StrKey tipo S. No se
+    realiza la afirmación de que el historial completo está limpio de secretos.
+- **Artifacts temporales:** El archivo `prepare.json` fue guardado en la ruta exacta
+  `tmp/t0/evidence/prepare.json`, la cual está ignorada por git (no en `/tmp`).
+- **Control de ejecución:** El flag `--execute` aborta de forma segura antes de limpiar la
+  evidencia y antes de interactuar con la red transaccional. No se realizaron acciones de
+  `deploy`, `invoke` ni envío de transacciones (`tx`).
+
+#### Blockers identificados y remediaciones aplicadas
+1. **Semilla en MiniMax M3:** La semilla de la cuenta `vv-testnet` apareció únicamente en la
+   salida de la herramienta, nunca estuvo versionada. Se procedió a eliminar el alias y
+   crear una nueva identidad `zkq-t0-20260702` con address
+   `GCWZZEAFBUN2S2WOV5FFBX4QVRA7AORQLMUHJDCIMZZCO24YDXVTLDAG`. Los gates transitorios
+   `fail-soft` fueron descartados de la versión de producción.
+2. **Sesiones de DeepSeek V4 Pro:** Dos sesiones independientes de DeepSeek quedaron mudas.
+   Se sospechó de indisponibilidad o falta de cuota, pero esto no fue confirmado. Como
+   contingencia, Gemini 3.5 Flash implementó las remediaciones necesarias.
+3. **Proceso huérfano de agy:** Se identificó una sesión huérfana de `agy` activa desde el
+   día anterior que ejecutaba tareas T0 de forma concurrente, lo que causaba el borrado de
+   directorios target. Se aisló el conflicto identificando el PPID y PGID del proceso
+   persistente y se detuvo manualmente.
+4. **Diferencia de hashes de Cargo:** El build limpio en `main` produce
+   `b9c6b42bafd7f1fe5b01884593793b804d0a88ed6be01eabab94c34fa0508c30`.
+   El mismo commit en el worktree anidado produce
+   `424dc3ea37a0f1b74a517a0f1f26f56fc4a0557cd3e45242c042cc5274c90f48`,
+   incluso aplicando `remap-path-prefix`. La causa raíz exacta no está resuelta
+   y no se atribuye concluyentemente al compilador ni a las macros. Se registra
+   como limitación de reproducibilidad cross-path; ningún hash fue modificado
+   manualmente para forzar coincidencia.
+
+#### Veredicto de auditoría
+La auditoría final a cargo de Gemini 3.1 Pro High determinó **0 accionables** y dictaminó **PASA**.
+*Nota sobre el proceso:* Una primera inferencia del auditor que marcaba el build como stale fue
+refutada mediante la realización de builds cruzados y corregida experimentalmente para garantizar
+la validez del estado de los fuentes.
+
+- **Fecha local final:** 2026-07-03.
+- **Estado del Deadline:** El plazo del 2026-07-02 ya expiró. La hora externa exacta del deadline
+  nunca fue informada por el usuario.
+- **Estado del Hito:** T0 prepare `APROBADO E INTEGRADO`, T0 execute/testnet `PENDIENTE`. El hito
+  T0 no se declara cerrado hasta completar la ejecución en la red de pruebas.
