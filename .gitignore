@@ -95,3 +95,11 @@ circuits/.release-assets/
 coverage/
 *.lcov
 tarpaulin-report.html
+
+# ── Local development and documentation (removed from remote) ─────────────
+docs/
+CLAUDE.md
+CLAUDE-MEMORY.md
+AGENTS.md
+techs-specs-zk-quorum.md
+zk-quorum.md
